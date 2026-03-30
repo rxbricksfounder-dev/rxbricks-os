@@ -6,22 +6,18 @@ st.set_page_config(page_title="PGY2 EM: Trust Verification", layout="wide")
 # ---------------------------------------------------------
 # 1. Connect to the Live Google Sheet
 # ---------------------------------------------------------
-# IMPORTANT: Replace this placeholder with your actual Sheet ID!
-SHEET_ID = "1zpbz0IQoNfDZkmE-kdh98vXHdD2zHEK0E3euCo016eQ"
-GID = "0" # This targets the first tab in your spreadsheet
+# Paste your new "Publish to web" CSV link inside the quotation marks below:
+sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?output=csv"
 
-# This special URL tells Google to hand the data to Python as a clean CSV
-sheet_url = f"https://docs.google.com/spreadsheets/d/1zpbz0IQoNfDZkmE-kdh98vXHdD2zHEK0E3euCo016eQ/export?format=csv&gid={GID}"
-
-# ttl=600 tells the app to check the Google Sheet for new updates every 10 minutes
-@st.cache_data(ttl=600) 
+@st.cache_data(ttl=60) # Temporarily set to 60 seconds for faster testing
 def load_curriculum():
     try:
-        # Read the live web link into a pandas DataFrame
+        # Read the published CSV link directly
         df = pd.read_csv(sheet_url)
         return df
     except Exception as e:
-        st.error("Could not connect to the Google Sheet. Please check the sharing permissions and Sheet ID.")
+        # If it fails, this will now print the exact system error to help us debug
+        st.error(f"Connection Failed. System Error: {e}")
         return pd.DataFrame() 
 
 # Load the data into the app
