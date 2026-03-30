@@ -14,6 +14,8 @@ def load_curriculum():
     try:
         # Read the published CSV link directly
         df = pd.read_csv(sheet_url)
+        if 'Status' in df.columns:
+            df = df[df['Status'] == 'Active']
         return df
     except Exception as e:
         # If it fails, this will now print the exact system error to help us debug
