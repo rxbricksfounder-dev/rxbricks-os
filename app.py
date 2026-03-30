@@ -11,7 +11,7 @@ SHEET_ID = "1zpbz0IQoNfDZkmE-kdh98vXHdD2zHEK0E3euCo016eQ"
 GID = "0" # This targets the first tab in your spreadsheet
 
 # This special URL tells Google to hand the data to Python as a clean CSV
-sheet_url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
+sheet_url = f"https://docs.google.com/spreadsheets/d/1zpbz0IQoNfDZkmE-kdh98vXHdD2zHEK0E3euCo016eQ/export?format=csv&gid={GID}"
 
 # ttl=600 tells the app to check the Google Sheet for new updates every 10 minutes
 @st.cache_data(ttl=600) 
