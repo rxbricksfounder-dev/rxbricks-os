@@ -42,46 +42,54 @@ if app_mode == "🧑‍🎓 Learner Mode":
     # and shows the "Open Resource" buttons) ...
 
 # ---------------------------------------------------------
-# 3. The Instructor Perspective (The New Build)
+# 3. The Instructor Perspective (Dual-Axis Evaluation)
 # ---------------------------------------------------------
 elif app_mode == "👨‍🏫 Preceptor Mode":
     st.title("Resident Evaluation")
     st.write("Perform real-time bedside Trust Verification.")
     
-    # Example: Select who you are evaluating
     resident_name = st.selectbox("Select Resident", ["Select...", "Dr. Smith", "Dr. Jones"])
-    
-    # Filter the dataframe for the activity using the CORRECT variable name
     selected_activity = st.selectbox("Select Activity to Evaluate", curriculum_df['Activity'].unique())
-    
-    # Look up the row in the dataframe for this activity
     activity_data = curriculum_df[curriculum_df['Activity'] == selected_activity].iloc[0]
     
-    # Display the Rubric Card 
-    st.markdown("### 🎯 Evaluation Rubric")
-    
-    # NOTE: These columns MUST exist in your Google Sheet and be spelled exactly like this!
+    # --- Context Card ---
+    st.markdown("### 🎯 Target Rubric")
     try:
-        st.info(f"**ASHP Objective:** {activity_data['ASHP Objective']}")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.write(f"**Cognitive Domain:** {activity_data['Cognitive Domain']}")
-        with col2:
-            st.write(f"**Action Verb:** {activity_data['Action Verb']}")
+        st.info(f"**ASHP Objective:** {activity_data['ASHP Objective']}\n\n**Target Cognitive Domain:** {activity_data['Cognitive Domain']} ({activity_data['Action Verb']})")
     except KeyError:
-        st.warning("⚠️ Waiting for 'ASHP Objective', 'Cognitive Domain', and 'Action Verb' columns to be added to the Google Sheet.")
-        
-    # The Entrustment Scale
-    st.markdown("### 📊 Entrustment Level")
-    zone = st.radio("Select current capability:", 
+        st.warning("⚠️ Waiting for 'ASHP Objective' and 'Cognitive Domain' columns to be added to the Google Sheet.")
+
+    st.divider()
+
+    # --- Axis 1: Bloom's Taxonomy (Complexity) ---
+    st.markdown("### 🧠 1. Observed Cognitive Level")
+    st.caption("What level of critical thinking did the resident actually demonstrate?")
+    
+    # We set the default value to whatever you mapped in the Google Sheet (if available)
+    blooms_options = ["Remembering", "Understanding", "Applying", "Analyzing", "Evaluating", "Creating"]
+    default_bloom = activity_data.get('Cognitive Domain', "Applying")
+    default_index = blooms_options.index(default_bloom) if default_bloom in blooms_options else 2
+    
+    observed_bloom = st.select_slider(
+        "Bloom's Taxonomy:",
+        options=blooms_options,
+        value=blooms_options[default_index]
+    )
+
+    # --- Axis 2: Miller's Entrustment (Independence) ---
+    st.markdown("### 📊 2. Entrustment Level")
+    st.caption("How much supervision did they require?")
+    zone = st.radio("Miller's Pyramid / Trust Zones:", 
                     ["Zone 1: Requires Direct Observation", 
                      "Zone 2: Requires Proactive Supervision", 
                      "Zone 3: Requires Reactive Supervision", 
                      "Zone 4: Ready for Independent Practice"])
     
-    if st.button("Submit Evaluation"):
-        st.success(f"Successfully logged {zone} for {resident_name} on {selected_activity}!")
+    st.divider()
+    
+    # --- Submit ---
+    if st.button("Submit Evaluation", use_container_width=True):
+        st.success(f"✅ Logged! {resident_name} achieved **{zone}** on an **{observed_bloom}** level task.")
         
 # ---------------------------------------------------------
 # 2. Dynamic Sidebar (Vision 2026 Curriculum)
