@@ -26,6 +26,62 @@ def load_curriculum():
 curriculum_df = load_curriculum()
 
 # ---------------------------------------------------------
+# 1. The Perspective Toggle (The Fork in the Road)
+# ---------------------------------------------------------
+# This puts a toggle switch in the sidebar of the app
+app_mode = st.sidebar.radio("Select Perspective", ["🧑‍🎓 Learner Mode", "👨‍🏫 Preceptor Mode"])
+
+# ---------------------------------------------------------
+# 2. The Learner Perspective (What you already built)
+# ---------------------------------------------------------
+if app_mode == "🧑‍🎓 Learner Mode":
+    st.title("Clinical Preparation")
+    st.write("Access your foundational knowledge and protocols here.")
+    
+    # ... (Keep all your existing code here that builds the dropdowns 
+    # and shows the "Open Resource" buttons) ...
+
+# ---------------------------------------------------------
+# 3. The Instructor Perspective (The New Build)
+# ---------------------------------------------------------
+elif app_mode == "👨‍🏫 Preceptor Mode":
+    st.title("Resident Evaluation")
+    st.write("Perform real-time bedside Trust Verification.")
+    
+    # Example: Select who you are evaluating
+    resident_name = st.selectbox("Select Resident", ["Select...", "Dr. Smith", "Dr. Jones"])
+    
+    # Filter the dataframe for the activity just like in learner mode
+    # BUT, instead of showing a link, you show the new columns you added to your CSV:
+    selected_activity = st.selectbox("Select Activity to Evaluate", df['Activity'].unique())
+    
+    # Look up the row in the dataframe for this activity
+    activity_data = df[df['Activity'] == selected_activity].iloc[0]
+    
+    # Display the Rubric Card (using Streamlit columns and metric boxes for a clean look)
+    st.markdown("### 🎯 Evaluation Rubric")
+    st.info(f"**ASHP Objective:** {activity_data['ASHP Objective']}")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write(f"**Cognitive Domain:** {activity_data['Cognitive Domain']}")
+    with col2:
+        st.write(f"**Action Verb:** {activity_data['Action Verb']}")
+        
+    # The Entrustment Scale
+    st.markdown("### 📊 Entrustment Level")
+    zone = st.radio("Select current capability:", 
+                    ["Zone 1: Requires Direct Observation", 
+                     "Zone 2: Requires Proactive Supervision", 
+                     "Zone 3: Requires Reactive Supervision", 
+                     "Zone 4: Ready for Independent Practice"])
+    
+    if st.button("Submit Evaluation"):
+        # For right now, just show a success message. 
+        # Later, we will write this data back to a hidden tab in your Google Sheet!
+        st.success(f"Successfully logged {zone} for {resident_name} on {selected_activity}!")
+
+# ---------------------------------------------------------
 # 2. Dynamic Sidebar (Vision 2026 Curriculum)
 # ---------------------------------------------------------
 st.sidebar.title("Vision 2026 Curriculum")
