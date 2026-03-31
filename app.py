@@ -1,3 +1,4 @@
+import datetime 
 import streamlit as st
 import pandas as pd
 
@@ -86,10 +87,35 @@ elif app_mode == "👨‍🏫 Preceptor Mode":
                      "Zone 4: Ready for Independent Practice"])
     
     st.divider()
-    
-    # --- Submit ---
-    if st.button("Submit Evaluation", use_container_width=True):
-        st.success(f"✅ Logged! {resident_name} achieved **{zone}** on an **{observed_bloom}** level task.")
+       
+    # --- Submit & Generate Narrative ---
+    if st.button("Submit & Generate Narrative", use_container_width=True):
+        
+        # Get today's date
+        import datetime
+        today = datetime.date.today().strftime("%B %d, %Y")
+        
+        # 1. Generate the Pharmacademic Narrative
+        narrative = (
+            f"CLINICAL EVALUATION SUMMARY ({today}):\n"
+            f"Learner: {resident_name}\n"
+            f"Activity: {selected_activity}\n"
+            f"ASHP Objective: {activity_data.get('ASHP Objective', 'N/A')}\n\n"
+            f"During this clinical activity, the resident was evaluated on their ability to perform tasks related to {activity_data.get('ASHP Objective', 'the assigned objective')}. "
+            f"The resident successfully demonstrated a cognitive complexity at the '{observed_bloom}' level (Target: {activity_data.get('Cognitive Domain', 'N/A')}). "
+            f"Clinically, the resident required '{zone}' supervision from the preceptor to complete the necessary patient care tasks safely and effectively. "
+            f"This activity aligns with the program's progression toward independent clinical practice."
+        )
+        
+        # 2. Display the success message
+        st.success(f"✅ Evaluation Logged for {resident_name}!")
+        
+        # 3. Provide the Copy-Paste Box for Pharmacademic
+        st.markdown("### 📋 Pharmacademic Export")
+        st.caption("Click the copy icon in the top right corner of the box below to paste directly into Pharmacademic.")
+        st.code(narrative, language="text")
+
+
         
 # ---------------------------------------------------------
 # 2. Dynamic Sidebar (Vision 2026 Curriculum)
