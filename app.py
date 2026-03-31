@@ -51,22 +51,26 @@ elif app_mode == "👨‍🏫 Preceptor Mode":
     # Example: Select who you are evaluating
     resident_name = st.selectbox("Select Resident", ["Select...", "Dr. Smith", "Dr. Jones"])
     
-    # Filter the dataframe for the activity just like in learner mode
-    # BUT, instead of showing a link, you show the new columns you added to your CSV:
-    selected_activity = st.selectbox("Select Activity to Evaluate", df['Activity'].unique())
+    # Filter the dataframe for the activity using the CORRECT variable name
+    selected_activity = st.selectbox("Select Activity to Evaluate", curriculum_df['Activity'].unique())
     
     # Look up the row in the dataframe for this activity
-    activity_data = df[df['Activity'] == selected_activity].iloc[0]
+    activity_data = curriculum_df[curriculum_df['Activity'] == selected_activity].iloc[0]
     
-    # Display the Rubric Card (using Streamlit columns and metric boxes for a clean look)
+    # Display the Rubric Card 
     st.markdown("### 🎯 Evaluation Rubric")
-    st.info(f"**ASHP Objective:** {activity_data['ASHP Objective']}")
     
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write(f"**Cognitive Domain:** {activity_data['Cognitive Domain']}")
-    with col2:
-        st.write(f"**Action Verb:** {activity_data['Action Verb']}")
+    # NOTE: These columns MUST exist in your Google Sheet and be spelled exactly like this!
+    try:
+        st.info(f"**ASHP Objective:** {activity_data['ASHP Objective']}")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write(f"**Cognitive Domain:** {activity_data['Cognitive Domain']}")
+        with col2:
+            st.write(f"**Action Verb:** {activity_data['Action Verb']}")
+    except KeyError:
+        st.warning("⚠️ Waiting for 'ASHP Objective', 'Cognitive Domain', and 'Action Verb' columns to be added to the Google Sheet.")
         
     # The Entrustment Scale
     st.markdown("### 📊 Entrustment Level")
@@ -77,10 +81,8 @@ elif app_mode == "👨‍🏫 Preceptor Mode":
                      "Zone 4: Ready for Independent Practice"])
     
     if st.button("Submit Evaluation"):
-        # For right now, just show a success message. 
-        # Later, we will write this data back to a hidden tab in your Google Sheet!
         st.success(f"Successfully logged {zone} for {resident_name} on {selected_activity}!")
-
+        
 # ---------------------------------------------------------
 # 2. Dynamic Sidebar (Vision 2026 Curriculum)
 # ---------------------------------------------------------
