@@ -52,7 +52,16 @@ elif app_mode == "👨‍🏫 Preceptor Mode":
     
     resident_name = st.selectbox("Select Resident", ["Select...", "Dr. Smith", "Dr. Jones"])
     selected_activity = st.selectbox("Select Activity to Evaluate", curriculum_df['Activity'].unique())
-    activity_data = curriculum_df[curriculum_df['Activity'] == selected_activity].iloc[0]
+   # 1. Search for the activity
+    filtered_data = curriculum_df[curriculum_df['Activity'] == selected_activity]
+    
+    # 2. Safety Check: Did we find it?
+    if filtered_data.empty:
+        st.warning("⚠️ No data found for this activity. Please select another or check the Google Sheet.")
+        st.stop() # Stops the app from crashing further down
+    
+    # 3. If found, proceed normally
+    activity_data = filtered_data.iloc[0]
     
     # --- Context Card ---
     st.markdown("### 🎯 Target Rubric")
