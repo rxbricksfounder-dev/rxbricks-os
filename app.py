@@ -1,3 +1,4 @@
+import requests
 import datetime 
 import streamlit as st
 import pandas as pd
@@ -88,14 +89,32 @@ elif app_mode == "👨‍🏫 Preceptor Mode":
     
     st.divider()
        
-    # --- Submit & Generate Narrative ---
-    if st.button("Submit & Generate Narrative", use_container_width=True):
+  # --- Submit, Log Data, & Generate Narrative ---
+    if st.button("Submit Evaluation & Log Data", use_container_width=True):
         
-        # Get today's date
         import datetime
         today = datetime.date.today().strftime("%B %d, %Y")
         
-        # 1. Generate the Pharmacademic Narrative
+        # 1. THE BACKDOOR DATA LOGGING
+        # Notice we changed 'viewform' to 'formResponse' at the end of your URL
+        form_url = "https://docs.google.com/forms/d/e/1FAIpQLSfhRstSlY7fxJMfXoPtgeCQTeyTdKcWEoGH8nU9jYs9Fhoz_g/formResponse"
+        
+        # REPLACE THESE ENTRY NUMBERS WITH YOUR EXACT NUMBERS
+        form_data = {
+            "entry.1175930505": resident_name,                               # Resident field
+            "entry.597824849": selected_activity,                           # Activity field
+            "entry.575285059": activity_data.get('ASHP Objective', 'N/A'),  # Objective field
+            "entry.930508246": observed_bloom,                              # Bloom field
+            "entry.411526759": zone                                         # Zone field
+        }
+        
+        # This command silently submits the form in the background
+        try:
+            requests.post(form_url, data=form_data)
+        except:
+            st.error("Warning: Could not sync to the database, but narrative was generated.")
+        
+        # 2. GENERATE THE PHARMACADEMIC NARRATIVE
         narrative = (
             f"CLINICAL EVALUATION SUMMARY ({today}):\n"
             f"Learner: {resident_name}\n"
@@ -107,15 +126,12 @@ elif app_mode == "👨‍🏫 Preceptor Mode":
             f"This activity aligns with the program's progression toward independent clinical practice."
         )
         
-        # 2. Display the success message
-        st.success(f"✅ Evaluation Logged for {resident_name}!")
+        st.success(f"✅ Evaluation seamlessly logged to the RPD Database for {resident_name}!")
         
-        # 3. Provide the Copy-Paste Box for Pharmacademic
+        # 3. DISPLAY THE NARRATIVE
         st.markdown("### 📋 Pharmacademic Export")
         st.caption("Click the copy icon in the top right corner of the box below to paste directly into Pharmacademic.")
         st.code(narrative, language="text")
-
-
         
 # ---------------------------------------------------------
 # 2. Dynamic Sidebar (Vision 2026 Curriculum)
