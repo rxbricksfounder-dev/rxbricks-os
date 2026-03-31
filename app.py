@@ -110,7 +110,7 @@ elif app_mode == "👨‍🏫 Preceptor Mode":
         
         # REPLACE THESE ENTRY NUMBERS WITH YOUR EXACT NUMBERS
         form_data = {
-            "entry.1175930505": resident_name,                               # Resident field
+            "entry.1175930505": resident_name,                              # Resident field
             "entry.597824849": selected_activity,                           # Activity field
             "entry.575285059": activity_data.get('ASHP Objective', 'N/A'),  # Objective field
             "entry.930508246": observed_bloom,                              # Bloom field
@@ -249,11 +249,11 @@ with level4:
         
         # 🚨 REPLACE THE "YOUR_ID_HERE" TEXT WITH YOUR REAL NUMBERS!
         form_data = {
-            "entry.YOUR_ID_HERE": resident_name,                               # Resident field
-            "entry.YOUR_ID_HERE": selected_activity,                           # Activity field
-            "entry.YOUR_ID_HERE": activity_data.get('ASHP Objective', 'N/A'),  # Objective field
-            "entry.YOUR_ID_HERE": observed_bloom,                              # Bloom field
-            "entry.YOUR_ID_HERE": zone                                         # Zone field
+            "entry.1175930505": resident_name,                               # Resident field
+            "entry.597824849": selected_activity,                           # Activity field
+            "entry.575285059": activity_data.get('ASHP Objective', 'N/A'),  # Objective field
+            "entry.930508246": observed_bloom,                              # Bloom field
+            "entry.411526759": zone                                         # Zone field
         }
         
         # This command silently submits the form and actually checks if Google accepted it
