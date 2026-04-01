@@ -379,54 +379,47 @@ elif st.session_state.get("authentication_status") is True:
             else:
                 st.info("No evaluations logged yet. Complete tasks with your preceptor to see them here!")
 
-        # --- NEW: LIVE SCHEDULE & GOOGLE CALENDAR SYNC ---
+       # --- LIVE SCHEDULE & GOOGLE CALENDAR SYNC ---
         st.markdown("### 📅 My Upcoming Schedule")
         
-        # 🚨 PASTE YOUR PUBLISHED SCHEDULE CSV LINK HERE:
-        schedule_csv_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=751471446&single=true&output=csv" 
-        
-        try:
-            schedule_df = pd.read_csv(schedule_csv_url)
-            
-            # Filter the schedule for the person logged in
-            # (Assuming you added a 'Name' column to the sheet to match 'learner_name')
-            my_schedule = schedule_df[schedule_df['Resident Name'] == learner_name]
-            
-            # Sort by date so upcoming is at the top
-            my_schedule['Start Date'] = pd.to_datetime(my_schedule['Start Date'])
-            my_schedule = my_schedule.sort_values(by='Start Date')
-            
-            # Grab just the next 5 upcoming shifts/topics
-            upcoming = my_schedule.head(5)
-            
-            if upcoming.empty:
-                st.info("No upcoming shifts found in the schedule database.")
-            else:
-                for index, row in upcoming.iterrows():
-                    shift_name = row['Subject']
-                    shift_date = row['Start Date'].strftime('%Y %B %d')
-                    start_time = row.get('Start Time', '08:00:00 AM')
-                    
-                    # Create an expander for each shift to keep the UI clean
-                    with st.expander(f"🗓️ {shift_date} | **{shift_name}**"):
-                        st.write(f"**Time:** {start_time} - {row.get('End Time', 'TBD')}")
-                        st.write(f"**Location/Details:** {row.get('Description', 'Emergency Department')}")
+        if not schedule_df.empty:
+            try:
+                # 1. Filter for the logged-in user
+                # We use .str.contains to be flexible with names
+                my_schedule = schedule_df[schedule_df['Resident Name'].str.contains(learner_name, na=False, case=False)]
+                
+                # 2. Convert Date and Sort
+                my_schedule['Start Date'] = pd.to_datetime(my_schedule['Start Date'])
+                
+                # Only show today and future dates
+                today_dt = pd.to_datetime(datetime.date.today())
+                upcoming = my_schedule[my_schedule['Start Date'] >= today_dt].sort_values(by='Start Date').head(5)
+                
+                if upcoming.empty:
+                    st.info("No upcoming shifts found in the system for your name.")
+                else:
+                    for index, row in upcoming.iterrows():
+                        shift_title = row['Subject']
+                        shift_date = row['Start Date'].strftime('%B %d, %Y')
+                        start_t = row.get('Start Time', '08:00:00 AM')
                         
-                        # Generate the magical Google Calendar Link
-                        gcal_link = generate_gcal_link(
-                            title=shift_name, 
-                            date_str=row['Start Date'].strftime('%Y-%m-%d'),
-                            start_time=start_time,
-                            end_time=row.get('End Time', '05:00:00 PM')
-                        )
-                        
-                        st.link_button("➕ Add to My Google Calendar", gcal_link)
-                        
-        except Exception as e:
-            st.warning("Currently setting up the schedule integration...")
-
-        
-        st.divider()
+                        with st.expander(f"🗓️ {shift_date} | **{shift_title}**"):
+                            st.write(f"**Time:** {start_t} - {row.get('End Time', 'N/A')}")
+                            
+                            # Generate Google Calendar Link
+                            gcal_link = generate_gcal_link(
+                                title=f"EM Shift: {shift_title}", 
+                                date_str=row['Start Date'].strftime('%Y-%m-%d'),
+                                start_time=start_t,
+                                end_time=row.get('End Time', '05:00:00 PM')
+                            )
+                            st.link_button("➕ Add to Google Calendar", gcal_link)
+                            
+            except Exception as e:
+                # This will tell us EXACTLY why it's failing
+                st.warning(f"Schedule Sync Error: Missing or mismatched column. (Details: {e})")
+        else:
+            st.error("Schedule database is empty or link is broken.")
 
     # =========================================================
     # ROOM A2: THE RESOURCE LIBRARY (EVERYONE SEES THIS)
