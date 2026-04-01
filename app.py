@@ -273,7 +273,6 @@ elif st.session_state.get("authentication_status") is True:
     st.divider()
        
     # --- 5. SUBMIT & NARRATIVE GENERATOR ---
-    if st.button("Submit Evaluation & Log Data", use_container_width=True):
         
         today = datetime.date.today().strftime("%B %d, %Y")
         form_url = "https://docs.google.com/forms/d/e/1FAIpQLSfhRstSlY7fxJMfXoPtgeCQTeyTdKcWEoGH8nU9jYs9Fhoz_g/formResponse"
