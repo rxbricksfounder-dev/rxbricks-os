@@ -35,7 +35,6 @@ sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7ba
 responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=589997778&single=true&output=csv"
 schedule_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=751471446&single=true&output=csv"
 
-curriculum_df, eval_df, schedule_df = load_data()
 @st.cache_data(ttl=60)
 def load_data():
     try:
