@@ -133,12 +133,6 @@ elif st.session_state.get("authentication_status") is True:
         st.title("📈 Live Resident Status Board")
         st.write("Program-wide analytics and progression tracking.")
         
-      responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=589997778&single=true&output=csv"
-    
-    try:
-        # Load the data and skip the timestamp column for cleaner viewing
-        eval_df = pd.read_csv(responses_url)
-        
         if eval_df.empty:
             st.info("No evaluations logged yet. Once preceptors submit data, charts will appear here.")
             st.stop()
