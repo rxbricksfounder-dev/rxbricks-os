@@ -14,8 +14,8 @@ sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7ba
 def load_curriculum():
     try:
         df = pd.read_csv(sheet_url)
-        if 'Status' in df.columns:
-            df = df[df['Status'] == 'Active']
+        #if 'Status' in df.columns:
+         #   df = df[df['Status'] == 'Active']
         return df
     except Exception as e:
         st.error(f"Connection Failed. System Error: {e}")
