@@ -118,121 +118,103 @@ elif st.session_state.get("authentication_status") is True:
     authenticator.logout("Logout", "sidebar")
     st.sidebar.success(f"Welcome, *{name}*")
     
-  # =========================================================
-    # ROOM A1: THE PROGRESS TRACKER (LEARNERS ONLY)
-    # =========================================================
-    if user_role == "learner":
-        st.title("My Clinical Journey")
-        
-        # --- 1. IDENTIFY THE LEARNER ---
-        # We removed the dropdown! The app securely pulls their name from the login.
-        learner_name = name 
-        
-        # --- 2. CALCULATE PROGRESS ---
-        # Total active activities in the curriculum
-        total_activities = len(curriculum_df['Activity'].unique())
-        
-        # Total unique activities this resident has been evaluated on
-        if not eval_df.empty and 'Resident Name' in eval_df.columns:
-            learner_evals = eval_df[eval_df['Resident Name'] == learner_name]
-            completed_activities = learner_evals['Activity'].nunique()
-        else:
-            completed_activities = 0
-            
-        # Calculate Percentage (Prevent dividing by zero)
-        progress_pct = completed_activities / total_activities if total_activities > 0 else 0
-        
-        # --- 3. THE STEP TRACKER UI ---
-        st.markdown(f"### 🏃‍♂️ Curriculum Progress: {completed_activities} / {total_activities} Tasks")
-        st.progress(progress_pct)
-        
-        # --- 4. DYNAMIC ENCOURAGEMENT ---
-        if progress_pct == 0:
-            st.info("🌱 Your journey begins today! Dive into the Level 1 materials below to get started.")
-        elif progress_pct < 0.25:
-            st.success("🔥 Great start! You are building a rock-solid foundation. Keep knocking out those didactic modules.")
-        elif progress_pct < 0.75:
-            st.success("🚀 Incredible momentum! You are deep in the trenches now. Keep pushing for those bedside evaluations.")
-        elif progress_pct < 1.0:
-            st.success("🏆 You are in the home stretch! Focus on polishing those Zone 4 independent skills.")
-        else:
-            st.balloons() 
-            st.success("🌟 CURRICULUM COMPLETE! You are ready for independent practice.")
-            
-        st.divider()
-
-    # =========================================================
-    # ROOM A2: THE RESOURCE LIBRARY (EVERYONE SEES THIS)
-    # =========================================================
-    st.markdown("### 📚 Clinical Preparation")
-    st.write("Access your foundational knowledge and protocols below.")
-    st.sidebar.title("Vision 2026 Curriculum")
-    st.sidebar.markdown("**Protection of Execution**")
-
-    if not curriculum_df.empty:
-        available_epas = curriculum_df['EPA'].dropna().unique()
-        selected_epa = st.sidebar.selectbox("Select EPA", available_epas)
-        
-        epa_filtered_df = curriculum_df[curriculum_df['EPA'] == selected_epa]
-        available_modules = epa_filtered_df['Module'].dropna().unique()
-        selected_module = st.sidebar.selectbox("Active Module", available_modules)
-        
-        module_data = epa_filtered_df[epa_filtered_df['Module'] == selected_module]
-    else:
-        selected_epa, selected_module = "Loading...", "Loading..."
-        module_data = pd.DataFrame()
-
-    st.markdown(f"### {selected_epa} | {selected_module}")
-    st.markdown("---")
-
-    level1, level2, level3, level4 = st.tabs([
-        "📚 Level 1: Knows", 
-        "🗣️ Level 2: Knows How", 
-        "🎯 Level 3: Shows How (Sim)", 
-        "🏥 Level 4: Does (Live)"
-    ])
-
-    with level1:
-        st.header("Level 1: Knows (Cognitive Audit)")
-        if not module_data.empty: display_objectives(module_data, "1")
-
-    with level2:
-        st.header("Level 2: Knows How (Competence)")
-        if not module_data.empty: display_objectives(module_data, "2")
-
-    with level3:
-        st.header("Level 3: Shows How (The Simulation Gateway)")
-        if not module_data.empty: display_objectives(module_data, "3")
-
-    with level4:
-        st.header("Level 4: Does (Trust Verification)")
-        if not module_data.empty: display_objectives(module_data, "4")
-
-
-    # =========================================================
-    # ROOM B: THE PRECEPTOR PERSPECTIVE
-    # =========================================================
-    if user_role in ["preceptor", "admin"]:
-        st.divider()
-        st.title("👨‍🏫 Preceptor Evaluation Tools")
-        
-        # 🚨 PASTE ALL OF YOUR ROOM B CODE HERE 🚨
-        # (Start from "if 'Resident Roster' in curriculum_df.columns:" where it builds the dropdown,
-        # down through the Bloom's slider, Entrustment zone, and Submit Button)
-        # DO NOT paste "elif app_mode == 'Preceptor Mode':" or the old PIN Padlock code!
-  
+    # Grab the Resident Roster so all rooms can use it
     if 'Resident Roster' in curriculum_df.columns:
         active_residents = curriculum_df['Resident Roster'].dropna().unique().tolist()
         active_residents.insert(0, "Select Learner...") 
     else:
-        active_residents = ["⚠️ Add 'Resident Roster' column to Sheet"]
+        active_residents = ["⚠️ Add 'Resident Roster' column"]
 
-    resident_name = st.selectbox("Select Resident", active_residents)
+    # =========================================================
+    # ROOM C: THE RPD DASHBOARD (ADMIN ONLY) 
+    # **MOVED TO TOP**
+    # =========================================================
+    if user_role == "admin":
+        st.title("📈 Live Resident Status Board")
+        st.write("Program-wide analytics and progression tracking.")
+        
+      responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=589997778&single=true&output=csv"
     
-    # 🚨 THIS IS THE LINE THAT WAS MISSING! 🚨
-    selected_activity = st.selectbox("Select Activity to Evaluate", curriculum_df['Activity'].unique())
-    
-    # --- 3. LOAD RUBRIC DATA ---
+    try:
+        # Load the data and skip the timestamp column for cleaner viewing
+        eval_df = pd.read_csv(responses_url)
+        
+        if eval_df.empty:
+            st.info("No evaluations logged yet. Once preceptors submit data, charts will appear here.")
+            st.stop()
+            
+        # 3. SELECT A RESIDENT TO REVIEW
+        # Assuming your form question was exactly "Resident Name"
+        resident_list = eval_df['Resident Name'].dropna().unique().tolist()
+        selected_resident = st.selectbox("Select Resident to Review:", resident_list)
+        
+        # Filter the data for just this resident
+        resident_data = eval_df[eval_df['Resident Name'] == selected_resident]
+        
+        # 4. SUMMARY METRICS
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Total Evaluations", len(resident_data))
+        with col2:
+            # Get the most recent zone achieved
+            latest_zone = resident_data.iloc[-1]['Zone'] if 'Zone' in resident_data.columns else "N/A"
+            st.metric("Latest Entrustment Zone", latest_zone)
+            
+        st.divider()
+        
+        # 5. VISUALIZE ENTRUSTMENT PROGRESSION
+        if 'Zone' in resident_data.columns:
+            st.markdown("### Entrustment Zone Distribution")
+            st.caption("How much supervision has this resident required across all logged activities?")
+            
+            # Count how many times they hit each zone and plot it
+            zone_counts = resident_data['Zone'].value_counts().reset_index()
+            zone_counts.columns = ['Zone', 'Count']
+            st.bar_chart(data=zone_counts, x='Zone', y='Count')
+            
+        # 6. RAW DATA LOG
+        st.markdown("### Recent Evaluation Log")
+        # Display the raw data cleanly, hiding any blank columns
+        st.dataframe(resident_data.dropna(axis=1, how='all'), use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Could not load the evaluation database. Check the CSV link. Error: {e}")
+        
+        st.divider()
+
+    # =========================================================
+    # ROOM B: THE PRECEPTOR PERSPECTIVE (PRECEPTOR & ADMIN)
+    # **MOVED TO TOP**
+    # =========================================================
+    if user_role in ["preceptor", "admin"]:
+        st.title("👨‍🏫 Preceptor Evaluation Tools")
+        st.write("Perform real-time bedside Trust Verification.")
+        
+        resident_name = st.selectbox("Select Resident", active_residents)
+        
+        # --- NEW: CASCADING ACTIVITY FILTER ---
+        st.markdown("##### Locate Activity")
+        col1, col2 = st.columns(2)
+        with col1:
+            # Optional EPA Filter
+            filter_epa = st.selectbox("Filter by EPA (Optional)", ["All EPAs"] + list(curriculum_df['EPA'].dropna().unique()))
+        
+        filtered_curr = curriculum_df
+        if filter_epa != "All EPAs":
+            filtered_curr = filtered_curr[filtered_curr['EPA'] == filter_epa]
+            with col2:
+                # Optional Module Filter
+                filter_module = st.selectbox("Filter by Module", ["All Modules"] + list(filtered_curr['Module'].dropna().unique()))
+                if filter_module != "All Modules":
+                    filtered_curr = filtered_curr[filtered_curr['Module'] == filter_module]
+
+        # The final dropdown (Reminder: Users can type directly into this box to search!)
+        selected_activity = st.selectbox("🔍 Search or Select Activity to Evaluate", filtered_curr['Activity'].unique())
+        
+        # 🚨 PASTE THE REST OF YOUR ROOM B EVALUATION CODE HERE 🚨
+        # (Start from `filtered_data = curriculum_df...` down to the Submit button)
+
+        # --- 3. LOAD RUBRIC DATA ---
     filtered_data = curriculum_df[curriculum_df['Activity'] == selected_activity]
     
     if filtered_data.empty:
@@ -303,61 +285,102 @@ elif st.session_state.get("authentication_status") is True:
         st.markdown("### 📋 Pharmacademic Export")
         st.caption("Click the copy icon in the top right corner of the box below to paste directly into Pharmacademic.")
         st.code(narrative, language="text")
-
-    # =========================================================
-    # ROOM C: THE RPD DASHBOARD
-    # =========================================================
-    if user_role == "admin":
-        st.divider()
-        st.title("📈 Live Resident Status Board")
         
-        # 🚨 PASTE ALL OF YOUR ROOM C CODE HERE 🚨
-        # (Start from reading the Form Responses CSV down to the Bar Chart and dataframe)
-        # DO NOT paste "elif app_mode == 'RPD Dashboard':" or the old PIN Padlock code!
+        st.divider()
 
-    responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=589997778&single=true&output=csv"
+
+    # =========================================================
+    # ROOM A1: THE PROGRESS TRACKER (LEARNERS ONLY)
+    # =========================================================
+    if user_role == "learner":
+        st.title("My Clinical Journey")
+        
+        learner_name = name 
+        total_activities = len(curriculum_df['Activity'].unique())
+        
+        if not eval_df.empty and 'Resident Name' in eval_df.columns:
+            learner_evals = eval_df[eval_df['Resident Name'] == learner_name]
+            completed_activities = learner_evals['Activity'].nunique()
+        else:
+            completed_activities = 0
+            
+        progress_pct = completed_activities / total_activities if total_activities > 0 else 0
+        
+        st.markdown(f"### 🏃‍♂️ Curriculum Progress: {completed_activities} / {total_activities} Tasks")
+        st.progress(progress_pct)
+        
+        if progress_pct == 0:
+            st.info("🌱 Your journey begins today! Dive into the Level 1 materials below to get started.")
+        elif progress_pct < 0.25:
+            st.success("🔥 Great start! You are building a rock-solid foundation. Keep knocking out those didactic modules.")
+        elif progress_pct < 0.75:
+            st.success("🚀 Incredible momentum! You are deep in the trenches now. Keep pushing for those bedside evaluations.")
+        elif progress_pct < 1.0:
+            st.success("🏆 You are in the home stretch! Focus on polishing those Zone 4 independent skills.")
+        else:
+            st.balloons() 
+            st.success("🌟 CURRICULUM COMPLETE! You are ready for independent practice.")
+            
+        # --- NEW: LIVE RESIDENT STATUS LOG ---
+        st.markdown("### 📊 My Recent Evaluations")
+        if not eval_df.empty and 'Resident Name' in eval_df.columns:
+            if completed_activities > 0:
+                # Clean up the table to show just the essentials, grabbing the 5 most recent
+                my_recent_evals = learner_evals[['Date', 'Activity', 'Zone', "Bloom's Level"]].tail(5)
+                st.dataframe(my_recent_evals, use_container_width=True, hide_index=True)
+            else:
+                st.info("No evaluations logged yet. Complete tasks with your preceptor to see them here!")
+                
+        st.divider()
+
+    # =========================================================
+    # ROOM A2: THE RESOURCE LIBRARY (EVERYONE SEES THIS)
+    # **MOVED TO BOTTOM**
+    # =========================================================
+    st.markdown("### 📚 Clinical Preparation")
+    st.write("Access your foundational knowledge and protocols below.")
     
-    try:
-        # Load the data and skip the timestamp column for cleaner viewing
-        eval_df = pd.read_csv(responses_url)
-        
-        if eval_df.empty:
-            st.info("No evaluations logged yet. Once preceptors submit data, charts will appear here.")
-            st.stop()
-            
-        # 3. SELECT A RESIDENT TO REVIEW
-        # Assuming your form question was exactly "Resident Name"
-        resident_list = eval_df['Resident Name'].dropna().unique().tolist()
-        selected_resident = st.selectbox("Select Resident to Review:", resident_list)
-        
-        # Filter the data for just this resident
-        resident_data = eval_df[eval_df['Resident Name'] == selected_resident]
-        
-        # 4. SUMMARY METRICS
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("Total Evaluations", len(resident_data))
-        with col2:
-            # Get the most recent zone achieved
-            latest_zone = resident_data.iloc[-1]['Zone'] if 'Zone' in resident_data.columns else "N/A"
-            st.metric("Latest Entrustment Zone", latest_zone)
-            
-        st.divider()
-        
-        # 5. VISUALIZE ENTRUSTMENT PROGRESSION
-        if 'Zone' in resident_data.columns:
-            st.markdown("### Entrustment Zone Distribution")
-            st.caption("How much supervision has this resident required across all logged activities?")
-            
-            # Count how many times they hit each zone and plot it
-            zone_counts = resident_data['Zone'].value_counts().reset_index()
-            zone_counts.columns = ['Zone', 'Count']
-            st.bar_chart(data=zone_counts, x='Zone', y='Count')
-            
-        # 6. RAW DATA LOG
-        st.markdown("### Recent Evaluation Log")
-        # Display the raw data cleanly, hiding any blank columns
-        st.dataframe(resident_data.dropna(axis=1, how='all'), use_container_width=True)
+    st.sidebar.title("Vision 2026 Curriculum")
+    st.sidebar.markdown("**Protection of Execution**")
+    
+    # 🚨 PASTE YOUR ROOM A2 CURRICULUM TABS CODE HERE 🚨
+    # (Start from `if not curriculum_df.empty:` down through the `with level4:` tab)
 
-    except Exception as e:
-        st.error(f"Could not load the evaluation database. Check the CSV link. Error: {e}")
+    if not curriculum_df.empty:
+        available_epas = curriculum_df['EPA'].dropna().unique()
+        selected_epa = st.sidebar.selectbox("Select EPA", available_epas)
+        
+        epa_filtered_df = curriculum_df[curriculum_df['EPA'] == selected_epa]
+        available_modules = epa_filtered_df['Module'].dropna().unique()
+        selected_module = st.sidebar.selectbox("Active Module", available_modules)
+        
+        module_data = epa_filtered_df[epa_filtered_df['Module'] == selected_module]
+    else:
+        selected_epa, selected_module = "Loading...", "Loading..."
+        module_data = pd.DataFrame()
+
+    st.markdown(f"### {selected_epa} | {selected_module}")
+    st.markdown("---")
+
+    level1, level2, level3, level4 = st.tabs([
+        "📚 Level 1: Knows", 
+        "🗣️ Level 2: Knows How", 
+        "🎯 Level 3: Shows How (Sim)", 
+        "🏥 Level 4: Does (Live)"
+    ])
+
+    with level1:
+        st.header("Level 1: Knows (Cognitive Audit)")
+        if not module_data.empty: display_objectives(module_data, "1")
+
+    with level2:
+        st.header("Level 2: Knows How (Competence)")
+        if not module_data.empty: display_objectives(module_data, "2")
+
+    with level3:
+        st.header("Level 3: Shows How (The Simulation Gateway)")
+        if not module_data.empty: display_objectives(module_data, "3")
+
+    with level4:
+        st.header("Level 4: Does (Trust Verification)")
+        if not module_data.empty: display_objectives(module_data, "4")
