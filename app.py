@@ -270,46 +270,46 @@ elif st.session_state.get("authentication_status") is True:
                          "Zone 3: Requires Reactive Supervision", 
                          "Zone 4: Ready for Independent Practice"])
     
-    st.divider()
+        st.divider()
        
     # --- 5. SUBMIT & NARRATIVE GENERATOR ---
         
-    today = datetime.date.today().strftime("%B %d, %Y")
-    form_url = "https://docs.google.com/forms/d/e/1FAIpQLSfhRstSlY7fxJMfXoPtgeCQTeyTdKcWEoGH8nU9jYs9Fhoz_g/formResponse"
+        today = datetime.date.today().strftime("%B %d, %Y")
+        form_url = "https://docs.google.com/forms/d/e/1FAIpQLSfhRstSlY7fxJMfXoPtgeCQTeyTdKcWEoGH8nU9jYs9Fhoz_g/formResponse"
+            
+        form_data = {
+            "entry.1175930505": resident_name,                              
+            "entry.597824849": selected_activity,                           
+            "entry.575285059": activity_data.get('ASHP Objective', 'N/A'),  
+            "entry.930508246": observed_bloom,                              
+            "entry.411526759": zone                                         
+            }
+            
+        try:
+            response = requests.post(form_url, data=form_data)
+            if response.status_code == 200:
+                st.success(f"✅ Evaluation seamlessly logged to the RPD Database for {resident_name}!")
+            else:
+                st.error(f"⚠️ The data didn't save! Google rejected the Entry IDs. (Error {response.status_code})")
+        except Exception as e:
+            st.error(f"Warning: Could not connect to Google Forms. ({e})")
+            
+        narrative = (
+            f"CLINICAL EVALUATION SUMMARY ({today}):\n"
+            f"Learner: {resident_name}\n"
+            f"Activity: {selected_activity}\n"
+            f"ASHP Objective: {activity_data.get('ASHP Objective', 'N/A')}\n\n"
+            f"During this clinical activity, the resident was evaluated on their ability to perform tasks related to {activity_data.get('ASHP Objective', 'the assigned objective')}. "
+            f"The resident successfully demonstrated a cognitive complexity at the '{observed_bloom}' level (Target: {activity_data.get('Cognitive Domain', 'N/A')}). "
+            f"Clinically, the resident required '{zone}' supervision from the preceptor to complete the necessary patient care tasks safely and effectively. "
+            f"This activity aligns with the program's progression toward independent clinical practice."
+        )
+            
+        st.markdown("### 📋 Pharmacademic Export")
+        st.caption("Click the copy icon in the top right corner of the box below to paste directly into Pharmacademic.")
+        st.code(narrative, language="text")
         
-    form_data = {
-        "entry.1175930505": resident_name,                              
-        "entry.597824849": selected_activity,                           
-        "entry.575285059": activity_data.get('ASHP Objective', 'N/A'),  
-        "entry.930508246": observed_bloom,                              
-        "entry.411526759": zone                                         
-        }
-        
-    try:
-        response = requests.post(form_url, data=form_data)
-        if response.status_code == 200:
-            st.success(f"✅ Evaluation seamlessly logged to the RPD Database for {resident_name}!")
-        else:
-            st.error(f"⚠️ The data didn't save! Google rejected the Entry IDs. (Error {response.status_code})")
-    except Exception as e:
-        st.error(f"Warning: Could not connect to Google Forms. ({e})")
-        
-    narrative = (
-        f"CLINICAL EVALUATION SUMMARY ({today}):\n"
-        f"Learner: {resident_name}\n"
-        f"Activity: {selected_activity}\n"
-        f"ASHP Objective: {activity_data.get('ASHP Objective', 'N/A')}\n\n"
-        f"During this clinical activity, the resident was evaluated on their ability to perform tasks related to {activity_data.get('ASHP Objective', 'the assigned objective')}. "
-        f"The resident successfully demonstrated a cognitive complexity at the '{observed_bloom}' level (Target: {activity_data.get('Cognitive Domain', 'N/A')}). "
-        f"Clinically, the resident required '{zone}' supervision from the preceptor to complete the necessary patient care tasks safely and effectively. "
-        f"This activity aligns with the program's progression toward independent clinical practice."
-    )
-        
-    st.markdown("### 📋 Pharmacademic Export")
-    st.caption("Click the copy icon in the top right corner of the box below to paste directly into Pharmacademic.")
-    st.code(narrative, language="text")
-    
-    st.divider()
+        st.divider()
 
 
     # =========================================================
