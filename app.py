@@ -101,40 +101,33 @@ if app_mode == "🧑‍🎓 Learner Mode":
 elif app_mode == "👨‍🏫 Preceptor Mode":
     st.title("Resident Evaluation")
     
-    # 1. THE SECURITY GATE
-    # Set your secret department PIN here
+    # --- 1. THE SECURITY GATE ---
     SECRET_PIN = "CTMFH2026" 
-    
     entered_pin = st.text_input("Enter Preceptor PIN to unlock dashboard:", type="password")
     
-    # If the box is blank, stop the app and wait.
     if entered_pin == "":
         st.stop()
-        
-    # If they guess wrong, show an error and stop.
     elif entered_pin != SECRET_PIN:
         st.error("❌ Incorrect PIN. Access Denied.")
         st.stop()
         
-    # 2. IF THE PIN IS CORRECT, UNLOCK THE APP
     st.success("✅ Preceptor Verified.")
     st.write("Perform real-time bedside Trust Verification.")
+    st.divider()
     
-    # ... [PASTE YOUR RESIDENT DROPDOWN AND EVALUATION RUBRIC CODE HERE] ...
-    # (Everything from resident_name = st.selectbox... all the way to the bottom)
-    
-   # Look for the 'Resident Roster' column in the Google Sheet. 
-    # If it exists, grab the names, drop the blanks, and make a list.
+    # --- 2. DYNAMIC RESIDENT ROSTER ---
     if 'Resident Roster' in curriculum_df.columns:
         active_residents = curriculum_df['Resident Roster'].dropna().unique().tolist()
-        # Add a placeholder at the top of the list
         active_residents.insert(0, "Select Learner...") 
     else:
         active_residents = ["⚠️ Add 'Resident Roster' column to Sheet"]
 
-    # The dropdown now builds itself automatically from your Sheet!
     resident_name = st.selectbox("Select Resident", active_residents)
     
+    # 🚨 THIS IS THE LINE THAT WAS MISSING! 🚨
+    selected_activity = st.selectbox("Select Activity to Evaluate", curriculum_df['Activity'].unique())
+    
+    # --- 3. LOAD RUBRIC DATA ---
     filtered_data = curriculum_df[curriculum_df['Activity'] == selected_activity]
     
     if filtered_data.empty:
@@ -151,6 +144,7 @@ elif app_mode == "👨‍🏫 Preceptor Mode":
 
     st.divider()
 
+    # --- 4. DUAL-AXIS EVALUATION ---
     st.markdown("### 🧠 1. Observed Cognitive Level")
     blooms_options = ["Remembering", "Understanding", "Applying", "Analyzing", "Evaluating", "Creating"]
     default_bloom = activity_data.get('Cognitive Domain', "Applying")
@@ -167,10 +161,10 @@ elif app_mode == "👨‍🏫 Preceptor Mode":
     
     st.divider()
        
+    # --- 5. SUBMIT & NARRATIVE GENERATOR ---
     if st.button("Submit Evaluation & Log Data", use_container_width=True):
         
         today = datetime.date.today().strftime("%B %d, %Y")
-        
         form_url = "https://docs.google.com/forms/d/e/1FAIpQLSfhRstSlY7fxJMfXoPtgeCQTeyTdKcWEoGH8nU9jYs9Fhoz_g/formResponse"
         
         form_data = {
