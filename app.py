@@ -51,23 +51,47 @@ credentials = {
     }
 }
 
-authenticator = stauth.Authenticate(credentials, "residency_dashboard", "abcdef", cookie_expiry_days=30)
+# The new authenticator strictly requires "hashed" (scrambled) passwords. 
+# We are hashing our test passwords on-the-fly here:
+credentials["usernames"]["jsmith"]["password"] = stauth.Hasher(["abc"]).generate()[0]
+credentials["usernames"]["preceptor1"]["password"] = stauth.Hasher(["def"]).generate()[0]
+credentials["usernames"]["rpd"]["password"] = stauth.Hasher(["ghi"]).generate()[0]
 
-name, authentication_status, username = authenticator.login("main")
+authenticator = stauth.Authenticate(
+    credentials, 
+    "residency_dashboard", 
+    "abcdef", 
+    cookie_expiry_days=30
+)
 
 # ---------------------------------------------------------
 # 3. THE SECURE ROUTING SYSTEM
 # ---------------------------------------------------------
-if authentication_status == False:
-    st.error("Username/password is incorrect")
-elif authentication_status == None:
-    st.warning("Please enter your username and password")
-elif authentication_status == True:
+try:
+    # Notice we no longer use "name, status, username =" here!
+    authenticator.login()
+except Exception as e:
+    st.error(e)
+
+# We now check Streamlit's internal memory (session_state) to see if they logged in
+if st.session_state.get("authentication_status") is False:
+    st.error("❌ Username/password is incorrect")
     
-    # 1. Show the Welcome Menu
+elif st.session_state.get("authentication_status") is None:
+    st.warning("🔒 Please enter your username and password")
+    
+elif st.session_state.get("authentication_status") is True:
+    
+    # --- IF LOGGED IN SUCCESSFULLY ---
+    
+    # Grab user details from Streamlit's internal memory
+    name = st.session_state["name"]
+    username = st.session_state["username"]
+    user_role = credentials["usernames"][username]["role"]
+    
+    # Show the Logout button in the sidebar
     authenticator.logout("Logout", "sidebar")
     st.sidebar.success(f"Welcome, *{name}*")
-    user_role = credentials["usernames"][username]["role"]
 
     # =========================================================
     # ROOM A: THE LEARNER PERSPECTIVE (EVERYONE SEES THIS)
