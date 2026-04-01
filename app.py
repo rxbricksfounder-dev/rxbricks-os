@@ -8,14 +8,14 @@ st.set_page_config(page_title="PGY2 EM: Trust Verification", layout="wide")
 # ---------------------------------------------------------
 # 1. Connect to the Live Google Sheet
 # ---------------------------------------------------------
-sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?output=csv"
+sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=1033342405&single=true&output=csv"
 
 @st.cache_data(ttl=60)
 def load_curriculum():
     try:
         df = pd.read_csv(sheet_url)
-        #if 'Status' in df.columns:
-         #   df = df[df['Status'] == 'Active']
+        if 'Status' in df.columns:
+            df = df[df['Status'] == 'Active']
         return df
     except Exception as e:
         st.error(f"Connection Failed. System Error: {e}")
