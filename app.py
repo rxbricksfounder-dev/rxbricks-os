@@ -33,7 +33,9 @@ st.set_page_config(page_title="PGY2 EM: Trust Verification", layout="wide")
 # ---------------------------------------------------------
 sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=1033342405&single=true&output=csv"
 responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=589997778&single=true&output=csv"
+schedule_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=751471446&single=true&output=csv"
 
+curriculum_df, eval_df, schedule_df = load_data()
 @st.cache_data(ttl=60)
 def load_data():
     try:
@@ -41,10 +43,11 @@ def load_data():
         if 'Status' in curr_df.columns:
             curr_df = curr_df[curr_df['Status'] == 'Active']
         eval_df = pd.read_csv(responses_url)
-        return curr_df, eval_df
+        sched_df = pd.read_csv(schedule_url) 
+        return curr_df, eval_df, sched_df
     except Exception as e:
-        st.error(f"Connection Failed. System Error: {e}")
-        return pd.DataFrame(), pd.DataFrame() 
+        st.error(f"Data Load Error: {e}")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame() 
 
 curriculum_df, eval_df = load_data()
 
@@ -387,7 +390,7 @@ elif st.session_state.get("authentication_status") is True:
             
             # Filter the schedule for the person logged in
             # (Assuming you added a 'Name' column to the sheet to match 'learner_name')
-            my_schedule = schedule_df[schedule_df['Name'] == learner_name]
+            my_schedule = schedule_df[schedule_df['Resident Name'] == learner_name]
             
             # Sort by date so upcoming is at the top
             my_schedule['Start Date'] = pd.to_datetime(my_schedule['Start Date'])
@@ -401,7 +404,7 @@ elif st.session_state.get("authentication_status") is True:
             else:
                 for index, row in upcoming.iterrows():
                     shift_name = row['Subject']
-                    shift_date = row['Start Date'].strftime('%B %d, %Y')
+                    shift_date = row['Start Date'].strftime('%Y %B %d')
                     start_time = row.get('Start Time', '08:00:00 AM')
                     
                     # Create an expander for each shift to keep the UI clean
