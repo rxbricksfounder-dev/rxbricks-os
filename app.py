@@ -118,27 +118,17 @@ elif st.session_state.get("authentication_status") is True:
     authenticator.logout("Logout", "sidebar")
     st.sidebar.success(f"Welcome, *{name}*")
     
+  # =========================================================
+    # ROOM A1: THE PROGRESS TRACKER (LEARNERS ONLY)
     # =========================================================
-    # ROOM A: THE LEARNER PERSPECTIVE (EVERYONE SEES THIS)
-    # =========================================================
-    st.title("My Clinical Journey")
-    
-    # 🚨 PASTE ALL OF YOUR ROOM A CODE HERE 🚨
-    # (Start from "if 'Resident Roster' in curriculum_df.columns:" 
-    # and paste all the way down through the 4 Miller's Pyramid Tabs)
-    # DO NOT paste "if app_mode == 'Learner Mode':"
-    
-    # --- 1. IDENTIFY THE LEARNER ---
-    if 'Resident Roster' in curriculum_df.columns:
-        active_residents = curriculum_df['Resident Roster'].dropna().unique().tolist()
-        active_residents.insert(0, "Select your name...") 
-    else:
-        active_residents = ["⚠️ Add 'Resident Roster' column"]
-
-    learner_name = st.selectbox("Who is viewing this?", active_residents)
-    
-    # --- 2. CALCULATE PROGRESS ---
-    if learner_name != "Select your name...":
+    if user_role == "learner":
+        st.title("My Clinical Journey")
+        
+        # --- 1. IDENTIFY THE LEARNER ---
+        # We removed the dropdown! The app securely pulls their name from the login.
+        learner_name = name 
+        
+        # --- 2. CALCULATE PROGRESS ---
         # Total active activities in the curriculum
         total_activities = len(curriculum_df['Activity'].unique())
         
@@ -154,8 +144,6 @@ elif st.session_state.get("authentication_status") is True:
         
         # --- 3. THE STEP TRACKER UI ---
         st.markdown(f"### 🏃‍♂️ Curriculum Progress: {completed_activities} / {total_activities} Tasks")
-        
-        # Streamlit's native progress bar requires a float between 0.0 and 1.0
         st.progress(progress_pct)
         
         # --- 4. DYNAMIC ENCOURAGEMENT ---
@@ -168,15 +156,16 @@ elif st.session_state.get("authentication_status") is True:
         elif progress_pct < 1.0:
             st.success("🏆 You are in the home stretch! Focus on polishing those Zone 4 independent skills.")
         else:
-            st.balloons() # Triggers a cool balloon animation in Streamlit!
+            st.balloons() 
             st.success("🌟 CURRICULUM COMPLETE! You are ready for independent practice.")
             
         st.divider()
 
-    # --- 5. THE RESOURCE LIBRARY ---
+    # =========================================================
+    # ROOM A2: THE RESOURCE LIBRARY (EVERYONE SEES THIS)
+    # =========================================================
     st.markdown("### 📚 Clinical Preparation")
     st.write("Access your foundational knowledge and protocols below.")
-    
     st.sidebar.title("Vision 2026 Curriculum")
     st.sidebar.markdown("**Protection of Execution**")
 
