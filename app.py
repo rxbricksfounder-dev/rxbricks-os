@@ -96,11 +96,32 @@ if app_mode == "🧑‍🎓 Learner Mode":
 
 
 # =========================================================
-# ROOM B: THE PRECEPTOR PERSPECTIVE
+# ROOM B: THE PRECEPTOR PERSPECTIVE (SECURED)
 # =========================================================
 elif app_mode == "👨‍🏫 Preceptor Mode":
     st.title("Resident Evaluation")
+    
+    # 1. THE SECURITY GATE
+    # Set your secret department PIN here
+    SECRET_PIN = "CTMFH2026" 
+    
+    entered_pin = st.text_input("Enter Preceptor PIN to unlock dashboard:", type="password")
+    
+    # If the box is blank, stop the app and wait.
+    if entered_pin == "":
+        st.stop()
+        
+    # If they guess wrong, show an error and stop.
+    elif entered_pin != SECRET_PIN:
+        st.error("❌ Incorrect PIN. Access Denied.")
+        st.stop()
+        
+    # 2. IF THE PIN IS CORRECT, UNLOCK THE APP
+    st.success("✅ Preceptor Verified.")
     st.write("Perform real-time bedside Trust Verification.")
+    
+    # ... [PASTE YOUR RESIDENT DROPDOWN AND EVALUATION RUBRIC CODE HERE] ...
+    # (Everything from resident_name = st.selectbox... all the way to the bottom)
     
    # Look for the 'Resident Roster' column in the Google Sheet. 
     # If it exists, grab the names, drop the blanks, and make a list.
