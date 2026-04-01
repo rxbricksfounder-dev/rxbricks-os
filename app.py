@@ -43,34 +43,50 @@ def display_objectives(df, target_level):
 # ---------------------------------------------------------
 # 2. THE USER DATABASE (Powered by Google Sheets)
 # ---------------------------------------------------------
-# 🚨 PASTE YOUR NEW 'USER DIRECTORY' CSV LINK HERE:
+import bcrypt # Add this at the top of Section 2
+
+# 🚨 PASTE YOUR 'USER DIRECTORY' CSV LINK HERE:
 users_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=389769523&single=true&output=csv"
 
 @st.cache_data(ttl=60)
 def load_users():
     try:
-        return pd.pd.read_csv(users_url)
+        return pd.read_csv(users_url)
     except:
         return pd.DataFrame()
 
 users_df = load_users()
 
-# Build the credentials dictionary dynamically from the spreadsheet
 credentials = {"usernames": {}}
 
 if not users_df.empty:
     for index, row in users_df.iterrows():
-        # Clean up any accidental spaces in the spreadsheet
         username = str(row['Username']).strip()
+        raw_password = str(row['Password']).strip()
         
+        # 1. THE SECURITY FIX: Hash the password on-the-fly
+        # This converts "hansolo" into a secure bcrypt hash before the app reads it
+        hashed_password = bcrypt.hashpw(raw_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        
+        # 2. THE VOCABULARY FIX: Translate the Google Sheet roles to the App's internal roles
+        sheet_role = str(row['Role']).strip().lower()
+        
+        if sheet_role == "rpd":
+            internal_role = "admin"
+        elif sheet_role == "resident":
+            internal_role = "learner"
+        else:
+            internal_role = "preceptor"
+        
+        # Build the secure user profile
         credentials["usernames"][username] = {
             "email": str(row['Email']).strip(),
             "name": str(row['Name']).strip(),
-            "password": str(row['Password']).strip(),
-            "role": str(row['Role']).strip().lower()
+            "password": hashed_password,
+            "role": internal_role
         }
 
-# Initialize the authenticator (Auto-hashing is turned on by default)
+# Initialize the authenticator with the newly hashed dictionary
 authenticator = stauth.Authenticate(
     credentials, 
     "residency_dashboard", 
