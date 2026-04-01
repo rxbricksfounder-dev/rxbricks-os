@@ -43,7 +43,7 @@ def display_objectives(df, target_level):
 # ---------------------------------------------------------
 # 2. The Perspective Toggle (The Fork in the Road)
 # ---------------------------------------------------------
-app_mode = st.sidebar.radio("Select Perspective", ["🧑‍🎓 Learner Mode", "👨‍🏫 Preceptor Mode"])
+app_mode = st.sidebar.radio("Select Perspective", ["🧑‍🎓 Learner Mode", "👨‍🏫 Preceptor Mode", "📈 RPD Dashboard"])
 
 # =========================================================
 # ROOM A: THE LEARNER PERSPECTIVE
@@ -198,3 +198,71 @@ elif app_mode == "👨‍🏫 Preceptor Mode":
         st.markdown("### 📋 Pharmacademic Export")
         st.caption("Click the copy icon in the top right corner of the box below to paste directly into Pharmacademic.")
         st.code(narrative, language="text")
+# =========================================================
+# ROOM C: THE RPD DASHBOARD
+# =========================================================
+elif app_mode == "📈 RPD Dashboard":
+    st.title("Live Resident Status Board")
+    st.write("Track continuous progression and entrustment levels.")
+    
+    # 1. THE SECURITY GATE (Optional, but recommended)
+    SECRET_PIN = "CTMFH2026" 
+    entered_pin = st.text_input("Enter RPD PIN to view analytics:", type="password")
+    
+    if entered_pin == "":
+        st.stop()
+    elif entered_pin != SECRET_PIN:
+        st.error("❌ Incorrect PIN. Access Denied.")
+        st.stop()
+        
+    st.success("✅ RPD Verified.")
+    st.divider()
+
+    # 2. LOAD THE EVALUATION DATA
+    # 🚨 PASTE YOUR 'FORM RESPONSES 1' CSV PUBLISH LINK HERE:
+    responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=589997778&single=true&output=csv"
+    
+    try:
+        # Load the data and skip the timestamp column for cleaner viewing
+        eval_df = pd.read_csv(responses_url)
+        
+        if eval_df.empty:
+            st.info("No evaluations logged yet. Once preceptors submit data, charts will appear here.")
+            st.stop()
+            
+        # 3. SELECT A RESIDENT TO REVIEW
+        # Assuming your form question was exactly "Resident Name"
+        resident_list = eval_df['Resident Name'].dropna().unique().tolist()
+        selected_resident = st.selectbox("Select Resident to Review:", resident_list)
+        
+        # Filter the data for just this resident
+        resident_data = eval_df[eval_df['Resident Name'] == selected_resident]
+        
+        # 4. SUMMARY METRICS
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Total Evaluations", len(resident_data))
+        with col2:
+            # Get the most recent zone achieved
+            latest_zone = resident_data.iloc[-1]['Zone'] if 'Zone' in resident_data.columns else "N/A"
+            st.metric("Latest Entrustment Zone", latest_zone)
+            
+        st.divider()
+        
+        # 5. VISUALIZE ENTRUSTMENT PROGRESSION
+        if 'Zone' in resident_data.columns:
+            st.markdown("### Entrustment Zone Distribution")
+            st.caption("How much supervision has this resident required across all logged activities?")
+            
+            # Count how many times they hit each zone and plot it
+            zone_counts = resident_data['Zone'].value_counts().reset_index()
+            zone_counts.columns = ['Zone', 'Count']
+            st.bar_chart(data=zone_counts, x='Zone', y='Count')
+            
+        # 6. RAW DATA LOG
+        st.markdown("### Recent Evaluation Log")
+        # Display the raw data cleanly, hiding any blank columns
+        st.dataframe(resident_data.dropna(axis=1, how='all'), use_container_width=True)
+
+    except Exception as e:
+        st.error(f"Could not load the evaluation database. Check the CSV link. Error: {e}")
