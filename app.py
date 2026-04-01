@@ -102,8 +102,17 @@ elif app_mode == "👨‍🏫 Preceptor Mode":
     st.title("Resident Evaluation")
     st.write("Perform real-time bedside Trust Verification.")
     
-    resident_name = st.selectbox("Select Resident", ["Select...", "Dr. Smith", "Dr. Jones"])
-    selected_activity = st.selectbox("Select Activity to Evaluate", curriculum_df['Activity'].unique())
+   # Look for the 'Resident Roster' column in the Google Sheet. 
+    # If it exists, grab the names, drop the blanks, and make a list.
+    if 'Resident Roster' in curriculum_df.columns:
+        active_residents = curriculum_df['Resident Roster'].dropna().unique().tolist()
+        # Add a placeholder at the top of the list
+        active_residents.insert(0, "Select Learner...") 
+    else:
+        active_residents = ["⚠️ Add 'Resident Roster' column to Sheet"]
+
+    # The dropdown now builds itself automatically from your Sheet!
+    resident_name = st.selectbox("Select Resident", active_residents)
     
     filtered_data = curriculum_df[curriculum_df['Activity'] == selected_activity]
     
