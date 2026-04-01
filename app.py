@@ -48,8 +48,6 @@ def load_data():
         st.error(f"Data Load Error: {e}")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame() 
 
-curriculum_df, eval_df = load_data()
-
 # Helper function for Learner Mode formatting
 def display_objectives(df, target_level):
     if 'Competence Level (Miller)' in df.columns:
