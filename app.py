@@ -9,19 +9,22 @@ st.set_page_config(page_title="PGY2 EM: Trust Verification", layout="wide")
 # 1. Connect to the Live Google Sheet
 # ---------------------------------------------------------
 sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=1033342405&single=true&output=csv"
+responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=589997778&single=true&output=csv"
 
 @st.cache_data(ttl=60)
-def load_curriculum():
+def load_data():
     try:
-        df = pd.read_csv(sheet_url)
-        if 'Status' in df.columns:
-            df = df[df['Status'] == 'Active']
-        return df
+        curr_df = pd.read_csv(sheet_url)
+        if 'Status' in curr_df.columns:
+            curr_df = curr_df[curr_df['Status'] == 'Active']
+            
+        eval_df = pd.read_csv(responses_url)
+        return curr_df, eval_df
     except Exception as e:
         st.error(f"Connection Failed. System Error: {e}")
-        return pd.DataFrame() 
+        return pd.DataFrame(), pd.DataFrame() 
 
-curriculum_df = load_curriculum()
+curriculum_df, eval_df = load_data()
 
 # Helper function for Learner Mode formatting
 def display_objectives(df, target_level):
@@ -49,8 +52,56 @@ app_mode = st.sidebar.radio("Select Perspective", ["🧑‍🎓 Learner Mode", "
 # ROOM A: THE LEARNER PERSPECTIVE
 # =========================================================
 if app_mode == "🧑‍🎓 Learner Mode":
-    st.title("Clinical Preparation")
-    st.write("Access your foundational knowledge and protocols here.")
+    st.title("My Clinical Journey")
+    
+    # --- 1. IDENTIFY THE LEARNER ---
+    if 'Resident Roster' in curriculum_df.columns:
+        active_residents = curriculum_df['Resident Roster'].dropna().unique().tolist()
+        active_residents.insert(0, "Select your name...") 
+    else:
+        active_residents = ["⚠️ Add 'Resident Roster' column"]
+
+    learner_name = st.selectbox("Who is viewing this?", active_residents)
+    
+    # --- 2. CALCULATE PROGRESS ---
+    if learner_name != "Select your name...":
+        # Total active activities in the curriculum
+        total_activities = len(curriculum_df['Activity'].unique())
+        
+        # Total unique activities this resident has been evaluated on
+        if not eval_df.empty and 'Resident Name' in eval_df.columns:
+            learner_evals = eval_df[eval_df['Resident Name'] == learner_name]
+            completed_activities = learner_evals['Activity'].nunique()
+        else:
+            completed_activities = 0
+            
+        # Calculate Percentage (Prevent dividing by zero)
+        progress_pct = completed_activities / total_activities if total_activities > 0 else 0
+        
+        # --- 3. THE STEP TRACKER UI ---
+        st.markdown(f"### 🏃‍♂️ Curriculum Progress: {completed_activities} / {total_activities} Tasks")
+        
+        # Streamlit's native progress bar requires a float between 0.0 and 1.0
+        st.progress(progress_pct)
+        
+        # --- 4. DYNAMIC ENCOURAGEMENT ---
+        if progress_pct == 0:
+            st.info("🌱 Your journey begins today! Dive into the Level 1 materials below to get started.")
+        elif progress_pct < 0.25:
+            st.success("🔥 Great start! You are building a rock-solid foundation. Keep knocking out those didactic modules.")
+        elif progress_pct < 0.75:
+            st.success("🚀 Incredible momentum! You are deep in the trenches now. Keep pushing for those bedside evaluations.")
+        elif progress_pct < 1.0:
+            st.success("🏆 You are in the home stretch! Focus on polishing those Zone 4 independent skills.")
+        else:
+            st.balloons() # Triggers a cool balloon animation in Streamlit!
+            st.success("🌟 CURRICULUM COMPLETE! You are ready for independent practice.")
+            
+        st.divider()
+
+    # --- 5. THE RESOURCE LIBRARY ---
+    st.markdown("### 📚 Clinical Preparation")
+    st.write("Access your foundational knowledge and protocols below.")
     
     st.sidebar.title("Vision 2026 Curriculum")
     st.sidebar.markdown("**Protection of Execution**")
@@ -93,7 +144,6 @@ if app_mode == "🧑‍🎓 Learner Mode":
     with level4:
         st.header("Level 4: Does (Trust Verification)")
         if not module_data.empty: display_objectives(module_data, "4")
-
 
 # =========================================================
 # ROOM B: THE PRECEPTOR PERSPECTIVE (SECURED)
