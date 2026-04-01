@@ -239,36 +239,36 @@ elif st.session_state.get("authentication_status") is True:
         # (Start from `filtered_data = curriculum_df...` down to the Submit button)
 
         # --- 3. LOAD RUBRIC DATA ---
-            filtered_data = curriculum_df[curriculum_df['Activity'] == selected_activity]
-            
-            if filtered_data.empty:
-                st.warning("⚠️ No data found for this activity. Please select another or check the Google Sheet.")
-                st.stop() 
-            
-            activity_data = filtered_data.iloc[0]
-            
-            st.markdown("### 🎯 Target Rubric")
-            try:
-                st.info(f"**ASHP Objective:** {activity_data['ASHP Objective']}\n\n**Target Cognitive Domain:** {activity_data['Cognitive Domain']} ({activity_data['Action Verb']})")
-            except KeyError:
-                st.warning("⚠️ Waiting for 'ASHP Objective' and 'Cognitive Domain' columns to be added to the Google Sheet.")
+        filtered_data = curriculum_df[curriculum_df['Activity'] == selected_activity]
         
-            st.divider()
+        if filtered_data.empty:
+            st.warning("⚠️ No data found for this activity. Please select another or check the Google Sheet.")
+            st.stop() 
         
-            # --- 4. DUAL-AXIS EVALUATION ---
-            st.markdown("### 🧠 1. Observed Cognitive Level")
-            blooms_options = ["Remembering", "Understanding", "Applying", "Analyzing", "Evaluating", "Creating"]
-            default_bloom = activity_data.get('Cognitive Domain', "Applying")
-            default_index = blooms_options.index(default_bloom) if default_bloom in blooms_options else 2
-            
-            observed_bloom = st.select_slider("Bloom's Taxonomy:", options=blooms_options, value=blooms_options[default_index])
+        activity_data = filtered_data.iloc[0]
         
-            st.markdown("### 📊 2. Entrustment Level")
-            zone = st.radio("Miller's Pyramid / Trust Zones:", 
-                            ["Zone 1: Requires Direct Observation", 
-                             "Zone 2: Requires Proactive Supervision", 
-                             "Zone 3: Requires Reactive Supervision", 
-                             "Zone 4: Ready for Independent Practice"])
+        st.markdown("### 🎯 Target Rubric")
+        try:
+            st.info(f"**ASHP Objective:** {activity_data['ASHP Objective']}\n\n**Target Cognitive Domain:** {activity_data['Cognitive Domain']} ({activity_data['Action Verb']})")
+        except KeyError:
+            st.warning("⚠️ Waiting for 'ASHP Objective' and 'Cognitive Domain' columns to be added to the Google Sheet.")
+    
+        st.divider()
+    
+        # --- 4. DUAL-AXIS EVALUATION ---
+        st.markdown("### 🧠 1. Observed Cognitive Level")
+        blooms_options = ["Remembering", "Understanding", "Applying", "Analyzing", "Evaluating", "Creating"]
+        default_bloom = activity_data.get('Cognitive Domain', "Applying")
+        default_index = blooms_options.index(default_bloom) if default_bloom in blooms_options else 2
+        
+        observed_bloom = st.select_slider("Bloom's Taxonomy:", options=blooms_options, value=blooms_options[default_index])
+    
+        st.markdown("### 📊 2. Entrustment Level")
+        zone = st.radio("Miller's Pyramid / Trust Zones:", 
+                        ["Zone 1: Requires Direct Observation", 
+                         "Zone 2: Requires Proactive Supervision", 
+                         "Zone 3: Requires Reactive Supervision", 
+                         "Zone 4: Ready for Independent Practice"])
     
     st.divider()
        
