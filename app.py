@@ -274,8 +274,8 @@ elif st.session_state.get("authentication_status") is True:
        
     # --- 5. SUBMIT & NARRATIVE GENERATOR ---
         
-        today = datetime.date.today().strftime("%B %d, %Y")
-        form_url = "https://docs.google.com/forms/d/e/1FAIpQLSfhRstSlY7fxJMfXoPtgeCQTeyTdKcWEoGH8nU9jYs9Fhoz_g/formResponse"
+    today = datetime.date.today().strftime("%B %d, %Y")
+    form_url = "https://docs.google.com/forms/d/e/1FAIpQLSfhRstSlY7fxJMfXoPtgeCQTeyTdKcWEoGH8nU9jYs9Fhoz_g/formResponse"
         
         form_data = {
             "entry.1175930505": resident_name,                              
