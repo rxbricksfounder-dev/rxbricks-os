@@ -3,6 +3,28 @@ import datetime
 import streamlit as st
 import pandas as pd
 import streamlit_authenticator as stauth
+import urllib.parse
+
+def generate_gcal_link(title, date_str, start_time="08:00:00", end_time="17:00:00", details=""):
+    """Converts a shift into a clickable Google Calendar link"""
+    # Format dates for Google Calendar (YYYYMMDDTHHMMSSZ)
+    try:
+        # Basic parsing assuming YYYY-MM-DD and HH:MM:SS AM/PM
+        start_dt = pd.to_datetime(f"{date_str} {start_time}")
+        end_dt = pd.to_datetime(f"{date_str} {end_time}")
+        
+        start_formatted = start_dt.strftime('%Y%m%dT%H%M%S')
+        end_formatted = end_dt.strftime('%Y%m%dT%H%M%S')
+        
+        base_url = "https://calendar.google.com/calendar/render?action=TEMPLATE"
+        params = {
+            "text": title,
+            "dates": f"{start_formatted}/{end_formatted}",
+            "details": details
+        }
+        return base_url + "&" + urllib.parse.urlencode(params)
+    except:
+        return "https://calendar.google.com"
 
 st.set_page_config(page_title="PGY2 EM: Trust Verification", layout="wide")
 
@@ -353,7 +375,54 @@ elif st.session_state.get("authentication_status") is True:
                 st.dataframe(my_recent_evals, use_container_width=True, hide_index=True)
             else:
                 st.info("No evaluations logged yet. Complete tasks with your preceptor to see them here!")
-                
+
+        # --- NEW: LIVE SCHEDULE & GOOGLE CALENDAR SYNC ---
+        st.markdown("### 📅 My Upcoming Schedule")
+        
+        # 🚨 PASTE YOUR PUBLISHED SCHEDULE CSV LINK HERE:
+        schedule_csv_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=751471446&single=true&output=csv" 
+        
+        try:
+            schedule_df = pd.read_csv(schedule_csv_url)
+            
+            # Filter the schedule for the person logged in
+            # (Assuming you added a 'Name' column to the sheet to match 'learner_name')
+            my_schedule = schedule_df[schedule_df['Name'] == learner_name]
+            
+            # Sort by date so upcoming is at the top
+            my_schedule['Start Date'] = pd.to_datetime(my_schedule['Start Date'])
+            my_schedule = my_schedule.sort_values(by='Start Date')
+            
+            # Grab just the next 5 upcoming shifts/topics
+            upcoming = my_schedule.head(5)
+            
+            if upcoming.empty:
+                st.info("No upcoming shifts found in the schedule database.")
+            else:
+                for index, row in upcoming.iterrows():
+                    shift_name = row['Subject']
+                    shift_date = row['Start Date'].strftime('%B %d, %Y')
+                    start_time = row.get('Start Time', '08:00:00 AM')
+                    
+                    # Create an expander for each shift to keep the UI clean
+                    with st.expander(f"🗓️ {shift_date} | **{shift_name}**"):
+                        st.write(f"**Time:** {start_time} - {row.get('End Time', 'TBD')}")
+                        st.write(f"**Location/Details:** {row.get('Description', 'Emergency Department')}")
+                        
+                        # Generate the magical Google Calendar Link
+                        gcal_link = generate_gcal_link(
+                            title=shift_name, 
+                            date_str=row['Start Date'].strftime('%Y-%m-%d'),
+                            start_time=start_time,
+                            end_time=row.get('End Time', '05:00:00 PM')
+                        )
+                        
+                        st.link_button("➕ Add to My Google Calendar", gcal_link)
+                        
+        except Exception as e:
+            st.warning("Currently setting up the schedule integration...")
+
+        
         st.divider()
 
     # =========================================================
