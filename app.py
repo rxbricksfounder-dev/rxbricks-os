@@ -405,6 +405,11 @@ elif st.session_state.get("authentication_status") is True:
         st.header("Level 3: Shows How (The Simulation Gateway)")
         if not module_data.empty: display_objectives(module_data, "3")
 
-    with level4:
+   with level4:
         st.header("Level 4: Does (Trust Verification)")
-        if not module_data.empty: display_objectives(module_data, "4")
+        st.write("Assessment: Direct Observation during a live clinical event.")
+        if not module_data.empty: 
+            display_objectives(module_data, "4")
+        # DELETE EVERYTHING BELOW THIS POINT! 
+        # (No more resident name inputs, entrustment scales, or submit buttons here. 
+        # The Preceptor Tool at the top handles all of that now!)
