@@ -2,11 +2,12 @@ import requests
 import datetime
 import streamlit as st
 import pandas as pd
+import streamlit_authenticator as stauth
 
 st.set_page_config(page_title="PGY2 EM: Trust Verification", layout="wide")
 
 # ---------------------------------------------------------
-# 1. Connect to the Live Google Sheet
+# 1. CONNECT TO GOOGLE SHEETS (Keep your existing data loaders here)
 # ---------------------------------------------------------
 sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=1033342405&single=true&output=csv"
 responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=589997778&single=true&output=csv"
@@ -17,7 +18,6 @@ def load_data():
         curr_df = pd.read_csv(sheet_url)
         if 'Status' in curr_df.columns:
             curr_df = curr_df[curr_df['Status'] == 'Active']
-            
         eval_df = pd.read_csv(responses_url)
         return curr_df, eval_df
     except Exception as e:
@@ -31,7 +31,6 @@ def display_objectives(df, target_level):
     if 'Competence Level (Miller)' in df.columns:
         df['Competence Level (Miller)'] = df['Competence Level (Miller)'].astype(str)
         level_items = df[df['Competence Level (Miller)'].str.contains(target_level, na=False)]
-        
         if not level_items.empty:
             for index, row in level_items.iterrows():
                 activity = row.get('Activity', 'Objective text missing')
@@ -40,19 +39,45 @@ def display_objectives(df, target_level):
                     st.link_button("📄 Open Resource", row['Web Link'])
         else:
             st.write(f"No Level {target_level} objectives found for this module.")
-    else:
-        st.warning("Please ensure your Google Sheet has a column named 'Competence Level (Miller)'")
 
 # ---------------------------------------------------------
-# 2. The Perspective Toggle (The Fork in the Road)
+# 2. THE USER DATABASE & AUTHENTICATOR
 # ---------------------------------------------------------
-app_mode = st.sidebar.radio("Select Perspective", ["🧑‍🎓 Learner Mode", "👨‍🏫 Preceptor Mode", "📈 RPD Dashboard"])
+credentials = {
+    "usernames": {
+        "jsmith": {"email": "jsmith@test.com", "name": "Dr. Smith", "password": "abc", "role": "learner"},
+        "preceptor1": {"email": "p1@test.com", "name": "Dr. Preceptor", "password": "def", "role": "preceptor"},
+        "rpd": {"email": "rpd@test.com", "name": "Program Director", "password": "ghi", "role": "admin"}
+    }
+}
 
-# =========================================================
-# ROOM A: THE LEARNER PERSPECTIVE
-# =========================================================
-if app_mode == "🧑‍🎓 Learner Mode":
+authenticator = stauth.Authenticate(credentials, "residency_dashboard", "abcdef", cookie_expiry_days=30)
+
+name, authentication_status, username = authenticator.login("main")
+
+# ---------------------------------------------------------
+# 3. THE SECURE ROUTING SYSTEM
+# ---------------------------------------------------------
+if authentication_status == False:
+    st.error("Username/password is incorrect")
+elif authentication_status == None:
+    st.warning("Please enter your username and password")
+elif authentication_status == True:
+    
+    # 1. Show the Welcome Menu
+    authenticator.logout("Logout", "sidebar")
+    st.sidebar.success(f"Welcome, *{name}*")
+    user_role = credentials["usernames"][username]["role"]
+
+    # =========================================================
+    # ROOM A: THE LEARNER PERSPECTIVE (EVERYONE SEES THIS)
+    # =========================================================
     st.title("My Clinical Journey")
+    
+    # 🚨 PASTE ALL OF YOUR ROOM A CODE HERE 🚨
+    # (Start from "if 'Resident Roster' in curriculum_df.columns:" 
+    # and paste all the way down through the 4 Miller's Pyramid Tabs)
+    # DO NOT paste "if app_mode == 'Learner Mode':"
     
     # --- 1. IDENTIFY THE LEARNER ---
     if 'Resident Roster' in curriculum_df.columns:
@@ -145,27 +170,19 @@ if app_mode == "🧑‍🎓 Learner Mode":
         st.header("Level 4: Does (Trust Verification)")
         if not module_data.empty: display_objectives(module_data, "4")
 
-# =========================================================
-# ROOM B: THE PRECEPTOR PERSPECTIVE (SECURED)
-# =========================================================
-elif app_mode == "👨‍🏫 Preceptor Mode":
-    st.title("Resident Evaluation")
-    
-    # --- 1. THE SECURITY GATE ---
-    SECRET_PIN = "CTMFH2026" 
-    entered_pin = st.text_input("Enter Preceptor PIN to unlock dashboard:", type="password")
-    
-    if entered_pin == "":
-        st.stop()
-    elif entered_pin != SECRET_PIN:
-        st.error("❌ Incorrect PIN. Access Denied.")
-        st.stop()
+
+    # =========================================================
+    # ROOM B: THE PRECEPTOR PERSPECTIVE
+    # =========================================================
+    if user_role in ["preceptor", "admin"]:
+        st.divider()
+        st.title("👨‍🏫 Preceptor Evaluation Tools")
         
-    st.success("✅ Preceptor Verified.")
-    st.write("Perform real-time bedside Trust Verification.")
-    st.divider()
-    
-    # --- 2. DYNAMIC RESIDENT ROSTER ---
+        # 🚨 PASTE ALL OF YOUR ROOM B CODE HERE 🚨
+        # (Start from "if 'Resident Roster' in curriculum_df.columns:" where it builds the dropdown,
+        # down through the Bloom's slider, Entrustment zone, and Submit Button)
+        # DO NOT paste "elif app_mode == 'Preceptor Mode':" or the old PIN Padlock code!
+  
     if 'Resident Roster' in curriculum_df.columns:
         active_residents = curriculum_df['Resident Roster'].dropna().unique().tolist()
         active_residents.insert(0, "Select Learner...") 
@@ -248,28 +265,18 @@ elif app_mode == "👨‍🏫 Preceptor Mode":
         st.markdown("### 📋 Pharmacademic Export")
         st.caption("Click the copy icon in the top right corner of the box below to paste directly into Pharmacademic.")
         st.code(narrative, language="text")
-# =========================================================
-# ROOM C: THE RPD DASHBOARD
-# =========================================================
-elif app_mode == "📈 RPD Dashboard":
-    st.title("Live Resident Status Board")
-    st.write("Track continuous progression and entrustment levels.")
-    
-    # 1. THE SECURITY GATE (Optional, but recommended)
-    SECRET_PIN = "CTMFH2026" 
-    entered_pin = st.text_input("Enter RPD PIN to view analytics:", type="password")
-    
-    if entered_pin == "":
-        st.stop()
-    elif entered_pin != SECRET_PIN:
-        st.error("❌ Incorrect PIN. Access Denied.")
-        st.stop()
-        
-    st.success("✅ RPD Verified.")
-    st.divider()
 
-    # 2. LOAD THE EVALUATION DATA
-    # 🚨 PASTE YOUR 'FORM RESPONSES 1' CSV PUBLISH LINK HERE:
+    # =========================================================
+    # ROOM C: THE RPD DASHBOARD
+    # =========================================================
+    if user_role == "admin":
+        st.divider()
+        st.title("📈 Live Resident Status Board")
+        
+        # 🚨 PASTE ALL OF YOUR ROOM C CODE HERE 🚨
+        # (Start from reading the Form Responses CSV down to the Bar Chart and dataframe)
+        # DO NOT paste "elif app_mode == 'RPD Dashboard':" or the old PIN Padlock code!
+
     responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=589997778&single=true&output=csv"
     
     try:
