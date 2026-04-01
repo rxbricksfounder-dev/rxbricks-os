@@ -41,25 +41,42 @@ def display_objectives(df, target_level):
             st.write(f"No Level {target_level} objectives found for this module.")
 
 # ---------------------------------------------------------
-# 2. THE USER DATABASE & AUTHENTICATOR
+# 2. THE USER DATABASE (Powered by Google Sheets)
 # ---------------------------------------------------------
-credentials = {
-    "usernames": {
-        "jsmith": {"email": "jsmith@test.com", "name": "Dr. Smith", "password": "abc", "role": "learner"},
-        "preceptor1": {"email": "p1@test.com", "name": "Dr. Preceptor", "password": "def", "role": "preceptor"},
-        "rpd": {"email": "rpd@test.com", "name": "Program Director", "password": "ghi", "role": "admin"}
-    }
-}
+# 🚨 PASTE YOUR NEW 'USER DIRECTORY' CSV LINK HERE:
+users_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=389769523&single=true&output=csv"
 
-# The new authenticator has "auto_hash=True" by default!
-# It will securely scramble the "abc", "def", "ghi" passwords automatically.
+@st.cache_data(ttl=60)
+def load_users():
+    try:
+        return pd.pd.read_csv(users_url)
+    except:
+        return pd.DataFrame()
+
+users_df = load_users()
+
+# Build the credentials dictionary dynamically from the spreadsheet
+credentials = {"usernames": {}}
+
+if not users_df.empty:
+    for index, row in users_df.iterrows():
+        # Clean up any accidental spaces in the spreadsheet
+        username = str(row['Username']).strip()
+        
+        credentials["usernames"][username] = {
+            "email": str(row['Email']).strip(),
+            "name": str(row['Name']).strip(),
+            "password": str(row['Password']).strip(),
+            "role": str(row['Role']).strip().lower()
+        }
+
+# Initialize the authenticator (Auto-hashing is turned on by default)
 authenticator = stauth.Authenticate(
     credentials, 
     "residency_dashboard", 
     "abcdef", 
     cookie_expiry_days=30
 )
-
 # ---------------------------------------------------------
 # 3. THE SECURE ROUTING SYSTEM
 # ---------------------------------------------------------
