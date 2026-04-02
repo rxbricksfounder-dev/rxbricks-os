@@ -109,10 +109,17 @@ def render_curriculum():
         st.warning("No digital resource linked for this activity yet.")
     else:
         with st.expander("📂 View Clinical Resource", expanded=True):
-            # FIXED: Handles both Docs and Slides properly with 100% width
-            if res_type in ["Google Doc", "Google Slides"]:
+            
+            # Robust URL matching for YouTube
+            if "youtube.com" in res_url.lower() or "youtu.be" in res_url.lower():
+                st.video(res_url)
+                
+            # Robust URL matching for Google Docs, Slides, and Forms (Questions)
+            elif "docs.google.com" in res_url.lower() or "forms.gle" in res_url.lower():
                 embed_url = res_url
-                if "embedded=true" not in embed_url:
+                
+                # forms.gle links sometimes don't need embedded=true, but docs/slides do
+                if "embedded=true" not in embed_url and "forms.gle" not in embed_url:
                     embed_url += "&embedded=true" if "?" in embed_url else "?embedded=true"
                 
                 iframe_html = f'''
@@ -126,12 +133,17 @@ def render_curriculum():
                     </iframe>
                 '''
                 components.html(iframe_html, height=700)
-            elif res_type == "YouTube":
-                st.video(res_url)
+                
+            # Fallback for any other type of link
             else:
                 st.link_button("Open Resource in New Tab", res_url)
 
     st.markdown(f"**Objective:** {selected_item['ASHP Objective']}")
+    
+    # Just in case you have a specific column named 'Questions' in your spreadsheet
+    if 'Questions' in curriculum_df.columns and not pd.isna(selected_item.get('Questions')):
+        st.divider()
+        st.markdown(f"**Questions / Assessment:**\n{selected_item['Questions']}")
 
 # =========================================================
 # DASHBOARDS
@@ -175,7 +187,7 @@ elif user_role == "preceptor":
     st.divider()
     render_curriculum()
 
-# --- RESIDENT/LEARNER VIEW (WITH RESTORED TABS) ---
+# --- RESIDENT/LEARNER VIEW ---
 elif user_role == "learner":
     st.title(f"Welcome, {name}!")
     
@@ -207,4 +219,4 @@ elif user_role == "learner":
         st.subheader("Keep Pushing Forward!")
         st.success("You are making great progress in your PGY2 EM Residency.")
         st.markdown("> *\"Success is the sum of small efforts, repeated day in and day out.\"*")
-        st.balloons() # A little Streamlit fun for the encouragement tab
+        # Balloons have been removed from here!
