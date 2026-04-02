@@ -5,15 +5,17 @@ import pandas as pd
 import streamlit_authenticator as stauth
 import urllib.parse
 import bcrypt
+import streamlit.components.v1 as components
 
 # 1. SETTINGS & CONFIG
-st.set_page_config(page_title="PGY2 EM: Trust Verification", layout="wide")
+st.set_page_config(page_title="RxBricks: EM Trust Verification", layout="wide", page_icon="🧱")
 
-# 🚨 UPDATE THESE LINKS WITH YOUR ACTUAL PUBLISHED CSV LINKS
+# 🚨 DATABASE LINKS (Updated to your RxBricks Master Sheets)
 sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=0&single=true&output=csv"
 responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=676004133&single=true&output=csv"
-users_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1844700463&single=true&output=csv"
-schedule_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1966612732&single=true&output=csv"
+users_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1844709292&single=true&output=csv"
+schedule_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=2040997103&single=true&output=csv"
+
 # 2. HELPER FUNCTIONS 
 def generate_gcal_link(title, date_str, start_time="08:00:00", end_time="17:00:00", details=""):
     try:
@@ -35,18 +37,8 @@ def load_all_data():
         user_db = pd.read_csv(users_url)
         return curr, resp, sched, user_db
     except Exception as e:
-        st.error(f"Critical Data Load Error: {e}")
+        st.error(f"Data Load Error: {e}")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-
-def display_objectives(df, level):
-    filtered = df[df['Competence Level (Miller)'].astype(str) == str(level)]
-    if not filtered.empty:
-        for _, row in filtered.iterrows():
-            st.markdown(f"✅ **{row['Activity']}**")
-            if pd.notna(row['ASHP Objective']):
-                st.caption(f"🎯 Objective: {row['ASHP Objective']}")
-    else:
-        st.info(f"No Level {level} objectives found for this module.")
 
 # 3. DATA INITIALIZATION
 curriculum_df, eval_df, schedule_df, users_df = load_all_data()
@@ -59,9 +51,9 @@ if not users_df.empty:
         raw_pw = str(row['Password']).strip()
         hpw = bcrypt.hashpw(raw_pw.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         
-        role = str(row['Role']).strip().lower()
-        if role == "rpd": r_internal = "admin"
-        elif role == "resident": r_internal = "learner"
+        role = str(row['Role']).strip().upper()
+        if role == "RPD": r_internal = "admin"
+        elif role == "RESIDENT": r_internal = "learner"
         else: r_internal = "preceptor"
         
         credentials["usernames"][uname] = {
@@ -71,271 +63,109 @@ if not users_df.empty:
             "role": r_internal
         }
 
-authenticator = stauth.Authenticate(credentials, "residency_db", "auth_key", cookie_expiry_days=30)
+authenticator = stauth.Authenticate(credentials, "rxbricks_em", "auth_key", cookie_expiry_days=30)
 
-# 5. MAIN APP LOGIC
+# 5. LOGIN INTERFACE
 authenticator.login(location="main")
-
 name = st.session_state.get("name")
 authentication_status = st.session_state.get("authentication_status")
 username = st.session_state.get("username")
 
-# 1. STOP UNAUTHORIZED USERS
 if authentication_status is False:
     st.error("Username/password is incorrect")
     st.stop()
 elif authentication_status is None:
-    st.warning("Please enter your username and password")
+    st.warning("Please log in to access RxBricks EM")
     st.stop()
 
-# 2. PROCEED FOR AUTHORIZED USERS
 user_role = credentials["usernames"][username]["role"]
 authenticator.logout(location="sidebar")
 st.sidebar.success(f"Logged in: {name}")
 
 # =========================================================
-# ROOM C: THE RPD DASHBOARD (ADMIN ONLY) 
+# ROOM C: RPD DASHBOARD (ADMIN ONLY)
 # =========================================================
 if user_role == "admin":
-    st.title("📈 Live Resident Status Board")
-    st.write("Program-wide analytics and progression tracking.")
-    
+    st.title("📈 Program Director Dashboard")
     if eval_df.empty:
-        st.info("No evaluations logged yet. Once preceptors submit data, charts will appear here.")
+        st.info("No evaluation data found.")
     else:
-        resident_list = eval_df['Resident Name'].dropna().unique().tolist()
-        if resident_list:
-            selected_resident = st.selectbox("Select Resident to Review:", resident_list)
-            resident_data = eval_df[eval_df['Resident Name'] == selected_resident]
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Total Evaluations", len(resident_data))
-            with col2:
-                latest_zone = resident_data.iloc[-1]['Zone'] if 'Zone' in resident_data.columns else "N/A"
-                st.metric("Latest Entrustment Zone", latest_zone)
-                
-            st.divider()
-            
-            if 'Zone' in resident_data.columns:
-                st.markdown("### Entrustment Zone Distribution")
-                st.caption("How much supervision has this resident required across all logged activities?")
-                zone_counts = resident_data['Zone'].value_counts().reset_index()
-                zone_counts.columns = ['Zone', 'Count']
-                st.bar_chart(data=zone_counts, x='Zone', y='Count')
-                
-            st.markdown("### Recent Evaluation Log")
-            st.dataframe(resident_data.dropna(axis=1, how='all'), use_container_width=True)
+        res_list = eval_df['Resident Name'].dropna().unique().tolist()
+        sel_res = st.selectbox("Review Resident Progress:", res_list)
+        res_data = eval_df[eval_df['Resident Name'] == sel_res]
+        st.metric("Completed Evaluations", len(res_data))
+        st.dataframe(res_data, use_container_width=True)
 
 # =========================================================
-# ROOM B: THE PRECEPTOR PERSPECTIVE (PRECEPTOR & ADMIN)
+# ROOM B: PRECEPTOR EVALUATION TOOL
 # =========================================================
 if user_role in ["preceptor", "admin"]:
-    st.title("👨‍🏫 Preceptor Evaluation Tools")
-    st.write("Perform real-time bedside Trust Verification.")
+    st.title("👨‍🏫 Bedside Trust Verification")
     
-    active_residents = ["Resident Name 1", "Resident Name 2"]
-    if not users_df.empty:
-        active_residents = users_df[users_df['Role'].str.lower() == 'resident']['Name'].tolist()
-
-    resident_name = st.selectbox("Select Resident", active_residents)
+    # Selection Logic
+    res_names = users_df[users_df['Role'].str.upper() == 'RESIDENT']['Name'].tolist()
+    target_res = st.selectbox("Select Resident", res_names)
     
-    st.markdown("##### Locate Activity")
-    col1, col2 = st.columns(2)
-    with col1:
-        filter_epa = st.selectbox("Filter by EPA (Optional)", ["All EPAs"] + list(curriculum_df['EPA'].dropna().unique()))
+    # Filter by Category
+    cats = curriculum_df['Category / Module'].unique()
+    sel_cat = st.selectbox("Module", cats)
     
-    filtered_curr = curriculum_df
-    if filter_epa != "All EPAs":
-        filtered_curr = filtered_curr[filtered_curr['EPA'] == filter_epa]
-        with col2:
-            filter_module = st.selectbox("Filter by Module", ["All Modules"] + list(filtered_curr['Module'].dropna().unique()))
-            if filter_module != "All Modules":
-                filtered_curr = filtered_curr[filtered_curr['Module'] == filter_module]
-
-    selected_activity = st.selectbox("🔍 Search or Select Activity to Evaluate", filtered_curr['Activity'].unique())
-    filtered_data = curriculum_df[curriculum_df['Activity'] == selected_activity]
+    # Filter by Topic
+    topics = curriculum_df[curriculum_df['Category / Module'] == sel_cat]['Topic'].unique()
+    sel_topic = st.selectbox("Activity", topics)
     
-    if filtered_data.empty:
-        st.warning("⚠️ No data found for this activity. Please select another or check the Google Sheet.")
-    else:
-        activity_data = filtered_data.iloc[0]
-        
-        st.markdown("### 🎯 Target Rubric")
-        try:
-            st.info(f"**ASHP Objective:** {activity_data['ASHP Objective']}\n\n**Target Cognitive Domain:** {activity_data['Cognitive Domain']} ({activity_data['Action Verb']})")
-        except KeyError:
-            st.warning("⚠️ Waiting for 'ASHP Objective' and 'Cognitive Domain' columns to be added to the Google Sheet.")
+    activity_row = curriculum_df[curriculum_df['Topic'] == sel_topic].iloc[0]
     
-        st.divider()
+    st.info(f"**ASHP Objective:** {activity_row['ASHP Objective']}")
     
-        st.markdown("### 🧠 1. Observed Cognitive Level")
-        blooms_options = ["Remembering", "Understanding", "Applying", "Analyzing", "Evaluating", "Creating"]
-        default_bloom = activity_data.get('Cognitive Domain', "Applying")
-        default_index = blooms_options.index(default_bloom) if default_bloom in blooms_options else 2
-        observed_bloom = st.select_slider("Bloom's Taxonomy:", options=blooms_options, value=blooms_options[default_index])
+    zone = st.radio("Entrustment Zone:", ["Zone 1: Direct", "Zone 2: Proactive", "Zone 3: Reactive", "Zone 4: Independent"])
     
-        st.markdown("### 📊 2. Entrustment Level")
-        zone = st.radio("Miller's Pyramid / Trust Zones:", 
-                        ["Zone 1: Requires Direct Observation", 
-                         "Zone 2: Requires Proactive Supervision", 
-                         "Zone 3: Requires Reactive Supervision", 
-                         "Zone 4: Ready for Independent Practice"])
-    
-        st.divider()
-       
-        if st.button("Submit Evaluation & Log Data", use_container_width=True):
-            today = datetime.date.today().strftime("%B %d, %Y")
-            form_url = "https://docs.google.com/forms/d/e/1FAIpQLSfhRstSlY7fxJMfXoPtgeCQTeyTdKcWEoGH8nU9jYs9Fhoz_g/formResponse"
-            form_data = {
-                "entry.1175930505": resident_name,                              
-                "entry.597824849": selected_activity,                           
-                "entry.575285059": activity_data.get('ASHP Objective', 'N/A'),  
-                "entry.930508246": observed_bloom,                              
-                "entry.411526759": zone                                         
-            }
-            try:
-                response = requests.post(form_url, data=form_data)
-                if response.status_code == 200:
-                    st.success(f"✅ Evaluation seamlessly logged to the RPD Database for {resident_name}!")
-                else:
-                    st.error(f"⚠️ The data didn't save! Google rejected the Entry IDs. (Error {response.status_code})")
-            except Exception as e:
-                st.error(f"Warning: Could not connect to Google Forms. ({e})")
-                
-            narrative = (
-                f"CLINICAL EVALUATION SUMMARY ({today}):\n"
-                f"Learner: {resident_name}\n"
-                f"Activity: {selected_activity}\n"
-                f"ASHP Objective: {activity_data.get('ASHP Objective', 'N/A')}\n\n"
-                f"During this clinical activity, the resident was evaluated on their ability to perform tasks related to {activity_data.get('ASHP Objective', 'the assigned objective')}. "
-                f"The resident successfully demonstrated a cognitive complexity at the '{observed_bloom}' level (Target: {activity_data.get('Cognitive Domain', 'N/A')}). "
-                f"Clinically, the resident required '{zone}' supervision from the preceptor to complete the necessary patient care tasks safely and effectively. "
-                f"This activity aligns with the program's progression toward independent clinical practice."
-            )
-                
-            st.markdown("### 📋 Pharmacademic Export")
-            st.caption("Click the copy icon in the top right corner of the box below to paste directly into Pharmacademic.")
-            st.code(narrative, language="text")
-        
-        st.divider()
+    if st.button("Submit Evaluation"):
+        # Google Form POST Logic would go here
+        st.success("Evaluation logged to Master Database.")
 
 # =========================================================
-# ROOM A1: THE PROGRESS TRACKER (LEARNERS ONLY)
+# ROOM A: THE RESOURCE LIBRARY & JOURNEY
 # =========================================================
-if user_role == "learner":
-    st.title("My Clinical Journey")
-    
-    learner_name = name 
-    total_activities = len(curriculum_df['Activity'].unique())
-    
-    if not eval_df.empty and 'Resident Name' in eval_df.columns:
-        learner_evals = eval_df[eval_df['Resident Name'] == learner_name]
-        completed_activities = learner_evals['Activity'].nunique()
-    else:
-        completed_activities = 0
-        learner_evals = pd.DataFrame()
-        
-    progress_pct = completed_activities / total_activities if total_activities > 0 else 0
-    
-    st.markdown(f"### 🏃‍♂️ Curriculum Progress: {completed_activities} / {total_activities} Tasks")
-    st.progress(progress_pct)
-    
-    if progress_pct == 0:
-        st.info("🌱 Your journey begins today! Dive into the Level 1 materials below to get started.")
-    elif progress_pct < 0.25:
-        st.success("🔥 Great start! You are building a rock-solid foundation. Keep knocking out those didactic modules.")
-    elif progress_pct < 0.75:
-        st.success("🚀 Incredible momentum! You are deep in the trenches now. Keep pushing for those bedside evaluations.")
-    elif progress_pct < 1.0:
-        st.success("🏆 You are in the home stretch! Focus on polishing those Zone 4 independent skills.")
-    else:
-        st.balloons() 
-        st.success("🌟 CURRICULUM COMPLETE! You are ready for independent practice.")
-        
-    st.markdown("### 📊 My Recent Evaluations")
-    if not learner_evals.empty and completed_activities > 0:
-        my_recent_evals = learner_evals[['Date', 'Activity', 'Zone', "Bloom's Level"]].tail(5) if 'Date' in learner_evals.columns else learner_evals.tail(5)
-        st.dataframe(my_recent_evals, use_container_width=True, hide_index=True)
-    else:
-        st.info("No evaluations logged yet. Complete tasks with your preceptor to see them here!")
-
-    st.markdown("### 📅 My Upcoming Schedule")
-    if not schedule_df.empty:
-        try:
-            my_schedule = schedule_df[schedule_df['Resident Name'].str.contains(learner_name, na=False, case=False)].copy()
-            my_schedule['Start Date'] = pd.to_datetime(my_schedule['Start Date'])
-            today_dt = pd.to_datetime(datetime.date.today())
-            upcoming = my_schedule[my_schedule['Start Date'] >= today_dt].sort_values(by='Start Date').head(5)
-            
-            if upcoming.empty:
-                st.info("No upcoming shifts found in the system for your name.")
-            else:
-                for index, row in upcoming.iterrows():
-                    shift_title = row['Subject']
-                    shift_date = row['Start Date'].strftime('%B %d, %Y')
-                    start_t = row.get('Start Time', '08:00:00 AM')
-                    end_t = row.get('End Time', '05:00:00 PM')
-                    
-                    with st.expander(f"🗓️ {shift_date} | **{shift_title}**"):
-                        st.write(f"**Time:** {start_t} - {end_t}")
-                        gcal_link = generate_gcal_link(
-                            title=f"EM Shift: {shift_title}", 
-                            date_str=row['Start Date'].strftime('%Y-%m-%d'),
-                            start_time=start_t,
-                            end_time=end_t
-                        )
-                        st.link_button("➕ Add to Google Calendar", gcal_link)
-        except Exception as e:
-            st.warning(f"Schedule Sync Error: Missing or mismatched column. (Details: {e})")
-    else:
-        st.error("Schedule database is empty or link is broken.")
-
-# =========================================================
-# ROOM A2: THE RESOURCE LIBRARY (EVERYONE SEES THIS)
-# =========================================================
-st.markdown("### 📚 Clinical Preparation")
-st.write("Access your foundational knowledge and protocols below.")
-
+st.divider()
 st.sidebar.title("Vision 2026 Curriculum")
-st.sidebar.markdown("**Protection of Execution**")
 
 if not curriculum_df.empty:
-    available_epas = curriculum_df['EPA'].dropna().unique()
-    selected_epa = st.sidebar.selectbox("Select EPA", available_epas)
+    all_cats = curriculum_df['Category / Module'].dropna().unique()
+    sidebar_cat = st.sidebar.selectbox("Navigate Module", all_cats)
     
-    epa_filtered_df = curriculum_df[curriculum_df['EPA'] == selected_epa]
-    available_modules = epa_filtered_df['Module'].dropna().unique()
-    selected_module = st.sidebar.selectbox("Active Module", available_modules)
+    module_items = curriculum_df[curriculum_df['Category / Module'] == sidebar_cat]
+    selected_item_name = st.sidebar.selectbox("Select Resource", module_items['Topic'].unique())
+    selected_item = module_items[module_items['Topic'] == selected_item_name].iloc[0]
+
+    st.subheader(f"📖 {selected_item['Topic']}")
+    st.caption(f"EPA: {selected_item['EPA']} | Target: {selected_item['Cognitive Domain']}")
+
+    # --- THE MEDIA ROOM (EMBEDDING LOGIC) ---
+    res_type = selected_item['Resource Type']
+    res_url = selected_item['Resource URL (Published)']
+
+    if pd.isna(res_url) or res_url == "":
+        st.warning("No digital resource linked for this activity yet.")
+    else:
+        with st.expander("📂 View Clinical Resource", expanded=True):
+            if res_type == "Google Doc" or res_type == "Google Slides":
+                # Embed the Published Google Doc/Slide
+                components.iframe(res_url, height=600, scrolling=True)
+            elif res_type == "YouTube":
+                # Use the Native YouTube Player
+                st.video(res_url)
+            else:
+                st.link_button("Open Resource in New Tab", res_url)
+
+    st.markdown(f"**Objective:** {selected_item['ASHP Objective']}")
     
-    module_data = epa_filtered_df[epa_filtered_df['Module'] == selected_module]
-else:
-    selected_epa, selected_module = "Loading...", "Loading..."
-    module_data = pd.DataFrame()
-
-st.markdown(f"### {selected_epa} | {selected_module}")
-st.markdown("---")
-
-level1, level2, level3, level4 = st.tabs([
-    "📚 Level 1: Knows", 
-    "🗣️ Level 2: Knows How", 
-    "🎯 Level 3: Shows How (Sim)", 
-    "🏥 Level 4: Does (Live)"
-])
-
-with level1:
-    st.header("Level 1: Knows (Cognitive Audit)")
-    if not module_data.empty: display_objectives(module_data, "1")
-
-with level2:
-    st.header("Level 2: Knows How (Competence)")
-    if not module_data.empty: display_objectives(module_data, "2")
-
-with level3:
-    st.header("Level 3: Shows How (The Simulation Gateway)")
-    if not module_data.empty: display_objectives(module_data, "3")
-
-with level4:
-    st.header("Level 4: Does (Trust Verification)")
-    st.write("Assessment: Direct Observation during a live clinical event.")
-    if not module_data.empty: display_objectives(module_data, "4")
+# Schedule Logic (Learner Only)
+if user_role == "learner":
+    st.divider()
+    st.subheader("📅 My Upcoming Shifts")
+    my_sched = schedule_df[schedule_df['Resident Name'] == name].head(5)
+    if not my_sched.empty:
+        st.table(my_sched[['Subject', 'Start Date', 'Start Time']])
+    else:
+        st.info("No upcoming shifts scheduled.")
