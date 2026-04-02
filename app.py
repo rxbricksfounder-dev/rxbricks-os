@@ -97,53 +97,65 @@ def render_curriculum():
     
     module_items = curriculum_df[curriculum_df['Category / Module'] == sidebar_cat]
     selected_item_name = st.sidebar.selectbox("Select Resource", module_items['Topic'].unique())
-    selected_item = module_items[module_items['Topic'] == selected_item_name].iloc[0]
-
-    st.subheader(f"📖 {selected_item['Topic']}")
-    st.caption(f"EPA: {selected_item['EPA']} | Target: {selected_item['Cognitive Domain']}")
-
-    res_type = str(selected_item['Resource Type']).strip()
-    res_url = str(selected_item['Resource URL (Published)']).strip()
-
-    if pd.isna(res_url) or res_url == "" or res_url.lower() == "nan":
-        st.warning("No digital resource linked for this activity yet.")
-    else:
-        with st.expander("📂 View Clinical Resource", expanded=True):
-            
-            # Robust URL matching for YouTube
-            if "youtube.com" in res_url.lower() or "youtu.be" in res_url.lower():
-                st.video(res_url)
-                
-            # Robust URL matching for Google Docs, Slides, and Forms (Questions)
-            elif "docs.google.com" in res_url.lower() or "forms.gle" in res_url.lower():
-                embed_url = res_url
-                
-                # forms.gle links sometimes don't need embedded=true, but docs/slides do
-                if "embedded=true" not in embed_url and "forms.gle" not in embed_url:
-                    embed_url += "&embedded=true" if "?" in embed_url else "?embedded=true"
-                
-                iframe_html = f'''
-                    <iframe src="{embed_url}" 
-                            width="100%" 
-                            height="700" 
-                            frameborder="0" 
-                            allowfullscreen="true" 
-                            mozallowfullscreen="true" 
-                            webkitallowfullscreen="true">
-                    </iframe>
-                '''
-                components.html(iframe_html, height=700)
-                
-            # Fallback for any other type of link
-            else:
-                st.link_button("Open Resource in New Tab", res_url)
-
-    st.markdown(f"**Objective:** {selected_item['ASHP Objective']}")
     
-    # Just in case you have a specific column named 'Questions' in your spreadsheet
-    if 'Questions' in curriculum_df.columns and not pd.isna(selected_item.get('Questions')):
-        st.divider()
-        st.markdown(f"**Questions / Assessment:**\n{selected_item['Questions']}")
+    # Grab ALL rows for the selected topic, not just the first one
+    topic_items = module_items[module_items['Topic'] == selected_item_name]
+    
+    # We can use the first row to grab the global info like EPA and Objectives
+    first_item = topic_items.iloc[0]
+
+    st.subheader(f"📖 {first_item['Topic']}")
+    st.caption(f"EPA: {first_item['EPA']} | Target: {first_item['Cognitive Domain']}")
+    st.markdown(f"**Objective:** {first_item['ASHP Objective']}")
+
+    # Get a list of the available resource types for this topic (e.g., Google Doc, Google Slides)
+    available_types = topic_items['Resource Type'].tolist()
+    
+    if not available_types:
+        st.warning("No resources attached to this topic.")
+        return
+
+    # Create dynamic tabs based on the resources available for this specific topic
+    st.write("---")
+    resource_tabs = st.tabs(available_types)
+
+    # Loop through the available resources and embed them into their respective tabs
+    for idx, tab in enumerate(resource_tabs):
+        with tab:
+            row_data = topic_items.iloc[idx]
+            res_type = str(row_data['Resource Type']).strip()
+            res_url = str(row_data['Resource URL (Published)']).strip()
+
+            if pd.isna(res_url) or res_url == "" or res_url.lower() == "nan":
+                st.info(f"No link provided for {res_type}.")
+            else:
+                # Robust URL matching for YouTube
+                if "youtube.com" in res_url.lower() or "youtu.be" in res_url.lower():
+                    st.video(res_url)
+                    
+                # Robust URL matching for Google Docs, Slides, and Forms
+                elif "docs.google.com" in res_url.lower() or "forms.gle" in res_url.lower():
+                    embed_url = res_url
+                    
+                    # forms.gle links sometimes don't need embedded=true, but docs/slides do
+                    if "embedded=true" not in embed_url and "forms.gle" not in embed_url:
+                        embed_url += "&embedded=true" if "?" in embed_url else "?embedded=true"
+                    
+                    iframe_html = f'''
+                        <iframe src="{embed_url}" 
+                                width="100%" 
+                                height="700" 
+                                frameborder="0" 
+                                allowfullscreen="true" 
+                                mozallowfullscreen="true" 
+                                webkitallowfullscreen="true">
+                        </iframe>
+                    '''
+                    components.html(iframe_html, height=700)
+                    
+                # Fallback for any other type of link
+                else:
+                    st.link_button(f"Open {res_type} in New Tab", res_url)
 
 # =========================================================
 # DASHBOARDS
