@@ -93,7 +93,7 @@ st.sidebar.success(f"Logged in: {name} | Tier: {user_tier}")
 # =========================================================
 # REUSABLE COMPONENT: CURRICULUM VIEWER
 # =========================================================
-def render_curriculum(user_role, user_tier)(user_role, user_tier)(current_role, current_tier):
+def render_curriculum(user_role, user_tier)(current_role, current_tier):
     if curriculum_df.empty:
         st.warning("Curriculum data is currently unavailable.")
         return
