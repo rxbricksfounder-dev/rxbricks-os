@@ -93,7 +93,7 @@ st.sidebar.success(f"Logged in: {name} | Tier: {user_tier}")
 # =========================================================
 # REUSABLE COMPONENT: CURRICULUM VIEWER
 # =========================================================
-def render_curriculum():
+def render_curriculum(current_role, current_tier):
     if curriculum_df.empty:
         st.warning("Curriculum data is currently unavailable.")
         return
@@ -105,17 +105,13 @@ def render_curriculum():
     module_items = curriculum_df[curriculum_df['Category / Module'] == sidebar_cat]
     selected_item_name = st.sidebar.selectbox("Select Resource", module_items['Topic'].unique())
     
-    # Grab ALL rows for the selected topic
     topic_items = module_items[module_items['Topic'] == selected_item_name]
-    
-    # We use the first row to grab the global info like EPA and Objectives
     first_item = topic_items.iloc[0]
 
     st.subheader(f"📖 {first_item['Topic']}")
     st.caption(f"EPA: {first_item['EPA']} | Target: {first_item['Cognitive Domain']}")
     st.markdown(f"**Objective:** {first_item['ASHP Objective']}")
 
-    # Get a list of the available resource types for this topic to use as tab names
     available_types = topic_items['Resource Type'].tolist()
     
     if not available_types:
@@ -123,11 +119,8 @@ def render_curriculum():
         return
 
     st.write("---")
-    
-    # Create dynamic tabs based on the resources available in your Master Sheet
     resource_tabs = st.tabs(available_types)
 
-    # Loop through the available resources and embed them into their respective tabs
     for idx, tab in enumerate(resource_tabs):
         with tab:
             row_data = topic_items.iloc[idx]
@@ -136,52 +129,56 @@ def render_curriculum():
 
             if pd.isna(res_url) or res_url == "" or res_url.lower() == "nan":
                 st.info(f"No link provided for {res_type}.")
-            else:
-                # 1. YOUTUBE HANDLER (Catches Lectures, Podcasts, Overviews natively)
-                if "youtube.com" in res_url.lower() or "youtu.be" in res_url.lower():
-                    # Streamlit's native video player handles YouTube beautifully
-                    st.video(res_url)
-                    
-                # 2. GOOGLE SLIDES HANDLER (Fixes the "refused to connect" error)
-                elif "docs.google.com/presentation" in res_url.lower():
-                    # Google Slides MUST use /embed instead of /pub in iframes
-                    embed_url = res_url.replace("/pub?", "/embed?").replace("/pub", "/embed")
-                    
-                    iframe_html = f'''
-                        <iframe src="{embed_url}" 
-                                width="100%" 
-                                height="700" 
-                                frameborder="0" 
-                                allowfullscreen="true" 
-                                mozallowfullscreen="true" 
-                                webkitallowfullscreen="true">
-                        </iframe>
-                    '''
-                    components.html(iframe_html, height=700)
+                continue
 
-                # 3. GOOGLE DOCS & FORMS HANDLER
-                elif "docs.google.com" in res_url.lower() or "forms.gle" in res_url.lower():
-                    embed_url = res_url
-                    
-                    # forms.gle links sometimes don't need embedded=true, but docs do
-                    if "embedded=true" not in embed_url and "forms.gle" not in embed_url:
-                        embed_url += "&embedded=true" if "?" in embed_url else "?embedded=true"
-                    
-                    iframe_html = f'''
-                        <iframe src="{embed_url}" 
-                                width="100%" 
-                                height="700" 
-                                frameborder="0" 
-                                allowfullscreen="true" 
-                                mozallowfullscreen="true" 
-                                webkitallowfullscreen="true">
-                        </iframe>
-                    '''
-                    components.html(iframe_html, height=700)
-                    
-                # 4. FALLBACK HANDLER
-                else:
-                    st.link_button(f"Open {res_type} in New Tab", res_url)
+            # --- PAYWALL LOGIC ---
+            is_premium = "youtube.com" in res_url.lower() or "youtu.be" in res_url.lower() or "notebooklm" in res_url.lower()
+            has_access = True
+            
+            # If it's a premium resource, check if the user is a learner on the Basic tier
+            if is_premium and current_role == "learner" and current_tier not in ["Pro", "Premium"]:
+                has_access = False
+                
+            if not has_access:
+                st.warning("⭐️ **Premium Feature**")
+                st.write("Video lectures, audio podcasts, and AI NotebookLM integrations are reserved for Pro subscribers.")
+                # You can add a link to a Stripe checkout or Google Form here later
+                st.button("Upgrade to Pro", key=f"upgrade_{idx}", type="primary")
+                continue # Skips the rest of the code for this tab, effectively hiding the resource
+
+            # --- RESOURCE RENDERING LOGIC ---
+            
+            # 1. YOUTUBE HANDLER 
+            if "youtube.com" in res_url.lower() or "youtu.be" in res_url.lower():
+                st.video(res_url)
+                
+            # 2. NOTEBOOKLM HANDLER (Cannot be embedded securely, must open in new tab)
+            elif "notebooklm" in res_url.lower():
+                st.info("💡 **Interactive AI Notebook**\n\nGoogle NotebookLM requires a secure browser session. Click below to open your AI study guide.")
+                st.link_button(f"Open NotebookLM", res_url, type="primary")
+
+            # 3. GOOGLE SLIDES HANDLER 
+            elif "docs.google.com/presentation" in res_url.lower():
+                embed_url = res_url.replace("/pub?", "/embed?").replace("/pub", "/embed")
+                iframe_html = f'''
+                    <iframe src="{embed_url}" width="100%" height="700" frameborder="0" allowfullscreen="true" mozallowfullscreen="true" webkitallowfullscreen="true"></iframe>
+                '''
+                components.html(iframe_html, height=700)
+
+            # 4. GOOGLE DOCS & FORMS HANDLER
+            elif "docs.google.com" in res_url.lower() or "forms.gle" in res_url.lower():
+                embed_url = res_url
+                if "embedded=true" not in embed_url and "forms.gle" not in embed_url:
+                    embed_url += "&embedded=true" if "?" in embed_url else "?embedded=true"
+                
+                iframe_html = f'''
+                    <iframe src="{embed_url}" width="100%" height="700" frameborder="0" allowfullscreen="true" mozallowfullscreen="true" webkitallowfullscreen="true"></iframe>
+                '''
+                components.html(iframe_html, height=700)
+                
+            # 5. FALLBACK HANDLER
+            else:
+                st.link_button(f"Open {res_type} in New Tab", res_url)
 
 # =========================================================
 # DASHBOARDS
