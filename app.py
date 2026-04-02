@@ -56,12 +56,16 @@ if not users_df.empty:
         if role == "RPD": r_internal = "admin"
         elif role == "RESIDENT": r_internal = "learner"
         else: r_internal = "preceptor"
+
+        # Safely grab the user's tier, default to Basic if the column doesn't exist yet
+        u_tier = str(row['Tier']).strip().capitalize() if 'Tier' in users_df.columns else "Basic"
         
         credentials["usernames"][uname] = {
             "email": str(row['Email']),
             "name": str(row['Name']),
             "password": hpw,
-            "role": r_internal
+            "role": r_internal,
+            "tier": u_tier # Store the tier in the active session
         }
 
 authenticator = stauth.Authenticate(credentials, "rxbricks_em", "auth_key", cookie_expiry_days=30)
@@ -79,9 +83,12 @@ elif authentication_status is None:
     st.warning("Please log in to access RxBricks EM")
     st.stop()
 
+# Grab both role and tier for the logged-in user
 user_role = credentials["usernames"][username]["role"]
+user_tier = credentials["usernames"][username]["tier"]
+
 authenticator.logout(location="sidebar")
-st.sidebar.success(f"Logged in: {name}")
+st.sidebar.success(f"Logged in: {name} | Tier: {user_tier}")
 
 # =========================================================
 # REUSABLE COMPONENT: CURRICULUM VIEWER
