@@ -108,7 +108,18 @@ def render_curriculum(current_role, current_tier):
     topic_items = module_items[module_items['Topic'] == selected_item_name]
     first_item = topic_items.iloc[0]
 
-    st.subheader(f"📖 {first_item['Topic']}")
+    # --- NEW: INTERACTIVE CHECKLIST PROTOTYPE ---
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.subheader(f"📖 {first_item['Topic']}")
+    with col2:
+        # Using session state to track completion temporarily
+        check_key = f"complete_{username}_{first_item['Topic']}"
+        is_complete = st.toggle("✅ Mark as Complete", key=check_key)
+
+    if is_complete:
+        st.success(f"Awesome job! '{first_item['Topic']}' marked as complete.")
+
     st.caption(f"EPA: {first_item['EPA']} | Target: {first_item['Cognitive Domain']}")
     st.markdown(f"**Objective:** {first_item['ASHP Objective']}")
 
@@ -143,7 +154,7 @@ def render_curriculum(current_role, current_tier):
                 st.warning("⭐️ **Premium Feature**")
                 st.write("Video lectures, audio podcasts, and AI NotebookLM integrations are reserved for Pro subscribers.")
                 # You can add a link to a Stripe checkout or Google Form here later
-                st.button("Upgrade to Pro", key=f"upgrade_{idx}", type="primary")
+                st.button("Upgrade to Pro", key=f"upgrade_{idx}_{first_item['Topic']}", type="primary")
                 continue # Skips the rest of the code for this tab, effectively hiding the resource
 
             # --- RESOURCE RENDERING LOGIC ---
@@ -194,7 +205,22 @@ if user_role == "admin":
         if res_list:
             sel_res = st.selectbox("Review Resident Progress:", res_list)
             res_data = eval_df[eval_df['Resident Name'] == sel_res]
-            st.metric("Completed Evaluations", len(res_data))
+            
+            # --- NEW: DATA EXPORT & PROGRESS ---
+            col1, col2 = st.columns(2)
+            with col1:
+                st.metric("Total Completed Evaluations", len(res_data))
+            with col2:
+                # Convert dataframe to CSV for download
+                csv_export = res_data.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Export Resident Data (CSV)",
+                    data=csv_export,
+                    file_name=f"{sel_res}_eval_report.csv",
+                    mime='text/csv',
+                    type="primary"
+                )
+                
             st.dataframe(res_data, use_container_width=True)
     
     st.divider()
@@ -232,6 +258,30 @@ elif user_role == "learner":
         render_curriculum(user_role, user_tier)
         
     with tab2:
+        st.subheader("📈 My Evaluation Progress")
+        if not eval_df.empty and not curriculum_df.empty:
+            my_evals = eval_df[eval_df['Resident Name'] == name]
+            
+            # --- NEW: VISUAL PROGRESS TRACKING ---
+            total_topics = len(curriculum_df['Topic'].unique())
+            # Assumes your eval form has a column matching the exact Topic name. 
+            # If your eval sheet calls it 'Activity' instead, change 'Topic' to 'Activity' below:
+            completed_topics = my_evals['Activity'].nunique() if 'Activity' in my_evals.columns else len(my_evals) 
+            
+            # Calculate percentage, ensuring it doesn't break if total_topics is 0
+            progress_pct = min(completed_topics / total_topics, 1.0) if total_topics > 0 else 0.0
+            
+            st.write(f"**Curriculum Mastery:** {completed_topics} / {total_topics} Topics Evaluated")
+            st.progress(progress_pct)
+            st.divider()
+            
+            st.metric("Total Completed Evaluations", len(my_evals))
+            if not my_evals.empty:
+                st.dataframe(my_evals, use_container_width=True)
+        else:
+            st.info("No evaluation data found yet.")
+
+        st.divider()
         st.subheader("📅 Upcoming Shifts")
         if not schedule_df.empty:
             my_sched = schedule_df[schedule_df['Resident Name'] == name].head(5)
@@ -239,19 +289,8 @@ elif user_role == "learner":
                 st.table(my_sched[['Subject', 'Start Date', 'Start Time']])
             else:
                 st.info("No upcoming shifts scheduled.")
-        
-        st.divider()
-        st.subheader("📈 My Evaluation Progress")
-        if not eval_df.empty:
-            my_evals = eval_df[eval_df['Resident Name'] == name]
-            st.metric("Total Completed Evaluations", len(my_evals))
-            if not my_evals.empty:
-                st.dataframe(my_evals, use_container_width=True)
-        else:
-            st.info("No evaluation data found yet.")
             
     with tab3:
         st.subheader("Keep Pushing Forward!")
         st.success("You are making great progress in your PGY2 EM Residency.")
         st.markdown("> *\"Success is the sum of small efforts, repeated day in and day out.\"*")
-        # Balloons have been removed from here!
