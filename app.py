@@ -248,41 +248,53 @@ elif user_role == "preceptor":
             "Zone 4: Independent (Resident practices independently)"
         ])
         
-        # --- PHARMACADEMIC NARRATIVE GENERATOR ---
-        st.subheader("📝 Pharmacademic Narrative Generator")
-        st.markdown("Add your qualitative feedback below. When submitted, a copy-pasteable summary will generate for Pharmacademic.")
+        # --- AUTOGENERATE PHARMACADEMIC NARRATIVE LOGIC ---
+        # Clean up variables from the spreadsheet for natural sentence structure
+        obj_text = str(activity_row['ASHP Objective']).lower()
+        sub_obj_text = str(activity_row['ASHP Sub-Objective']).replace('"', '').strip()
+        action_verb = str(activity_row.get('Action Verb', 'evaluate')).lower()
+        cog_domain = str(activity_row.get('Cognitive Domain', 'application')).lower()
         
-        strengths = st.text_area("Key Strengths (What went well):")
-        improvements = st.text_area("Areas for Improvement (Next steps):")
+        # Smart mapping based on the selected Entrustment Zone
+        if "Zone 1" in zone:
+            zone_narrative = "required direct and continuous supervision"
+            next_steps = "Future encounters should focus on moving toward proactive supervision by having the resident formulate and propose plans prior to execution."
+        elif "Zone 2" in zone:
+            zone_narrative = "required proactive supervision and routine preceptor review prior to acting"
+            next_steps = "Future encounters should encourage the resident to execute plans with reactive preceptor availability, building clinical confidence."
+        elif "Zone 3" in zone:
+            zone_narrative = "performed with reactive supervision, appropriately seeking guidance when clinically necessary"
+            next_steps = "The resident is progressing excellently; next steps involve pushing for full independence on routine cases within this topic."
+        else:
+            zone_narrative = "performed completely independently, serving as a reliable and competent practitioner"
+            next_steps = "The resident has achieved mastery in this area and should continue independent practice and peer mentoring."
+
+        # Stitch together the formal Pharmacademic paragraph
+        auto_narrative = (
+            f"Resident {target_res} was evaluated on the clinical topic of {sel_topic}. "
+            f"During this encounter, the resident {zone_narrative} in order to {sub_obj_text}.\n\n"
+            f"Operating within the cognitive domain of {cog_domain}, the resident demonstrated the ability to {action_verb} "
+            f"as it relates to the broader program goal to {obj_text}.\n\n"
+            f"Targeted Next Steps: {next_steps}"
+        )
+
+        st.divider()
+        st.subheader("📝 Pharmacademic Narrative")
+        st.markdown("This narrative was **auto-generated** based on the selected entrustment zone and ASHP curriculum taxonomy. You may edit the text below before copying.")
         
-        if st.button("Generate & Submit Evaluation", type="primary"):
+        # Place the auto-generated text into a text area so the preceptor can edit it if they want to
+        final_narrative = st.text_area("Final Evaluation Text (Editable):", value=auto_narrative, height=250)
+        
+        if st.button("Log Evaluation internally", type="primary"):
             st.success(f"Evaluation for {target_res} logged internally.")
             
-            # Build the transposition text
-            pharmacademic_text = f"""RESIDENT: {target_res}
-ACTIVITY: {sel_topic} ({sel_cat})
-ASHP OBJECTIVE: {activity_row['ASHP Objective']}
-SUB-OBJECTIVE: {activity_row['ASHP Sub-Objective']}
-
-ACHIEVED ENTRUSTMENT LEVEL: 
-{zone}
-
-STRENGTHS / POSITIVE BEHAVIORS:
-{strengths if strengths.strip() else 'No specific strengths noted for this encounter.'}
-
-AREAS FOR GROWTH / NEXT STEPS:
-{improvements if improvements.strip() else 'No specific areas for improvement noted for this encounter.'}
-
-*This bedside evaluation was logged via RxBricks EM Trust Verification.*"""
-            
-            st.divider()
             st.write("**📋 Ready for Pharmacademic:** Click the copy icon in the top right corner of the box below to transpose.")
-            # st.code automatically creates a visually distinct box with a copy-to-clipboard button
-            st.code(pharmacademic_text, language="markdown")
+            # Create the final copy-paste block
+            st.code(final_narrative, language="markdown")
             
     st.divider()
     render_curriculum(user_role, user_tier)
-
+    
 # --- RESIDENT/LEARNER VIEW ---
 elif user_role == "learner":
     st.title(f"Welcome, {name}!")
