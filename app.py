@@ -145,15 +145,15 @@ elif authentication_status is None:
     # ROOM C: THE RPD DASHBOARD (ADMIN ONLY) 
     # **MOVED TO TOP**
     # =========================================================
-    if user_role == "admin":
-        st.title("📈 Live Resident Status Board")
-        st.write("Program-wide analytics and progression tracking.")
-        
-       if eval_df.empty:
-    st.info("No evaluations logged yet. Once preceptors submit data, charts will appear here.")
-else:
-    # 3. SELECT A RESIDENT TO REVIEW (Indent everything below this!)
-    resident_list = eval_df['Resident Name'].dropna().unique().tolist()
+   if user_role == "admin":
+    st.title("📈 Live Resident Status Board")
+    
+    # The 'i' in 'if' must align perfectly with the 's' in 'st.title'
+    if eval_df.empty:
+        st.info("No evaluations logged yet...")
+    else:
+        # The code inside the else block gets indented one more level (8 spaces)
+        resident_list = eval_df['Resident Name'].dropna().unique().tolist()
         # ... continue indenting the rest of the Admin charts ...
         selected_resident = st.selectbox("Select Resident to Review:", resident_list)
         
