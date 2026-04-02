@@ -77,11 +77,11 @@ if not users_df.empty:
 authenticator = stauth.Authenticate(credentials, "residency_db", "auth_key", cookie_expiry_days=30)
 
 # 5. MAIN APP LOGIC
-name, authentication_status, username = authenticator.login("Login", "main")
+name, authentication_status, username = authenticator.login(location="main")
 
 if authentication_status:
     user_role = credentials["usernames"][username]["role"]
-    authenticator.logout("Logout", "sidebar")
+    authenticator.logout(location="sidebar")
     st.sidebar.success(f"Logged in: {name}")
 
     # ROOM C: RPD DASHBOARD
