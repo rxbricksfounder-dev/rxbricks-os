@@ -77,7 +77,13 @@ if not users_df.empty:
 authenticator = stauth.Authenticate(credentials, "residency_db", "auth_key", cookie_expiry_days=30)
 
 # 5. MAIN APP LOGIC
-name, authentication_status, username = authenticator.login(location="main")
+# Call the login widget
+authenticator.login(location="main")
+
+# Manually retrieve the variables from Streamlit's session state
+name = st.session_state.get("name")
+authentication_status = st.session_state.get("authentication_status")
+username = st.session_state.get("username")
 
 if authentication_status:
     user_role = credentials["usernames"][username]["role"]
