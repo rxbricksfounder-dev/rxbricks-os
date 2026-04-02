@@ -150,10 +150,10 @@ elif authentication_status is None:
         st.write("Program-wide analytics and progression tracking.")
         
        if eval_df.empty:
-        st.info("No evaluations logged yet. Once preceptors submit data, charts will appear here.")
+    st.info("No evaluations logged yet. Once preceptors submit data, charts will appear here.")
 else:
-        # 3. SELECT A RESIDENT TO REVIEW (Indent everything below this!)
-        resident_list = eval_df['Resident Name'].dropna().unique().tolist()
+    # 3. SELECT A RESIDENT TO REVIEW (Indent everything below this!)
+    resident_list = eval_df['Resident Name'].dropna().unique().tolist()
         # ... continue indenting the rest of the Admin charts ...
         selected_resident = st.selectbox("Select Resident to Review:", resident_list)
         
