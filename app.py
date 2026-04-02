@@ -105,11 +105,6 @@ if user_role == "admin":
     st.title("📈 Live Resident Status Board")
     # ... rest of your code ...
 
-if authentication_status:
-    user_role = credentials["usernames"][username]["role"]
-    authenticator.logout(location="sidebar")
-    st.sidebar.success(f"Logged in: {name}")
-
     # ROOM C: RPD DASHBOARD
     if user_role == "admin":
         st.title("📈 RPD Status Board")
