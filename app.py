@@ -10,28 +10,29 @@ import streamlit.components.v1 as components
 # 1. SETTINGS & CONFIG
 st.set_page_config(page_title="RxBricks: EM Trust Verification", layout="wide", page_icon="🧱")
 
-# 🚨 DATABASE LINKS (Updated to your RxBricks Master Sheets)
+# 🚨 RE-PASTE YOUR LINKS HERE AFTER INDIVIDUALLY PUBLISHING EACH TAB
 sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=0&single=true&output=csv"
 responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=676004133&single=true&output=csv"
-users_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1844709292&single=true&output=csv"
-schedule_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=2040997103&single=true&output=csv"
+users_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1844700463&single=true&output=csv"
+schedule_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1966612732&single=true&output=csv"
 
 @st.cache_data(ttl=60)
 def load_all_data():
-    links = {
-        "Curriculum": sheet_url,
-        "Evaluations": responses_url,
-        "Users": users_url,
-        "Schedule": schedule_url
-    }
-    data = {}
-    for name, url in links.items():
-        try:
-            data[name] = pd.read_csv(url)
-        except Exception as e:
-            st.error(f"❌ Error loading {name} sheet: {e}")
-            data[name] = pd.DataFrame()
-    return data["Curriculum"], data["Evaluations"], data["Schedule"], data["Users"]
+    # Helper to clean URLs (removes accidental spaces/newlines)
+    def clean(u): return u.strip() if isinstance(u, str) else u
+    
+    try:
+        # We load them one by one to catch the specific '400' culprit
+        curr = pd.read_csv(clean(sheet_url))
+        resp = pd.read_csv(clean(responses_url))
+        sched = pd.read_csv(clean(schedule_url))
+        user_db = pd.read_csv(clean(users_url))
+        return curr, resp, sched, user_db
+    except Exception as e:
+        st.error(f"⚠️ Link Verification Error: {e}")
+        # Identify which link is likely broken
+        st.info("Check that your Google Sheet 'Publish to Web' settings are set to 'CSV' for each individual tab.")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 # 2. HELPER FUNCTIONS 
 def generate_gcal_link(title, date_str, start_time="08:00:00", end_time="17:00:00", details=""):
