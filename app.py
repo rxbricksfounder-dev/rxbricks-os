@@ -93,7 +93,7 @@ st.sidebar.success(f"Logged in: {name} | Tier: {user_tier}")
 # =========================================================
 # REUSABLE COMPONENT: CURRICULUM VIEWER
 # =========================================================
-def render_curriculum(current_role, current_tier):
+def render_curriculum(user_role, user_tier)(user_role, user_tier)(current_role, current_tier):
     if curriculum_df.empty:
         st.warning("Curriculum data is currently unavailable.")
         return
@@ -198,7 +198,7 @@ if user_role == "admin":
             st.dataframe(res_data, use_container_width=True)
     
     st.divider()
-    render_curriculum()
+    render_curriculum(user_role, user_tier)
 
 # --- PRECEPTOR VIEW ---
 elif user_role == "preceptor":
@@ -220,7 +220,7 @@ elif user_role == "preceptor":
             st.success("Evaluation logged to Master Database.")
             
     st.divider()
-    render_curriculum()
+    render_curriculum(user_role, user_tier)
 
 # --- RESIDENT/LEARNER VIEW ---
 elif user_role == "learner":
@@ -229,7 +229,7 @@ elif user_role == "learner":
     tab1, tab2, tab3 = st.tabs(["📚 Curriculum & Resources", "📅 My Progress & Schedule", "💡 Encouragement"])
     
     with tab1:
-        render_curriculum()
+        render_curriculum(user_role, user_tier)
         
     with tab2:
         st.subheader("📅 Upcoming Shifts")
