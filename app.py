@@ -4,148 +4,121 @@ import streamlit as st
 import pandas as pd
 import streamlit_authenticator as stauth
 import urllib.parse
+import bcrypt
 
+# 1. SETTINGS & CONFIG
+st.set_page_config(page_title="PGY2 EM: Trust Verification", layout="wide")
+
+# 🚨 UPDATE THESE LINKS WITH YOUR ACTUAL PUBLISHED CSV LINKS
+sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=1033342405&single=true&output=csv"
+responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=589997778&single=true&output=csv"
+users_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=389769523&single=true&output=csv"
+schedule_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=751471446&single=true&output=csv"
+
+# 2. HELPER FUNCTIONS (Must be defined BEFORE they are called)
 def generate_gcal_link(title, date_str, start_time="08:00:00", end_time="17:00:00", details=""):
-    """Converts a shift into a clickable Google Calendar link"""
-    # Format dates for Google Calendar (YYYYMMDDTHHMMSSZ)
     try:
-        # Basic parsing assuming YYYY-MM-DD and HH:MM:SS AM/PM
         start_dt = pd.to_datetime(f"{date_str} {start_time}")
         end_dt = pd.to_datetime(f"{date_str} {end_time}")
-        
-        start_formatted = start_dt.strftime('%Y%m%dT%H%M%S')
-        end_formatted = end_dt.strftime('%Y%m%dT%H%M%S')
-        
-        base_url = "https://calendar.google.com/calendar/render?action=TEMPLATE"
-        params = {
-            "text": title,
-            "dates": f"{start_formatted}/{end_formatted}",
-            "details": details
-        }
-        return base_url + "&" + urllib.parse.urlencode(params)
+        start_f = start_dt.strftime('%Y%m%dT%H%M%S')
+        end_f = end_dt.strftime('%Y%m%dT%H%M%S')
+        params = {"action": "TEMPLATE", "text": title, "dates": f"{start_f}/{end_f}", "details": details}
+        return "https://calendar.google.com/calendar/render?" + urllib.parse.urlencode(params)
     except:
         return "https://calendar.google.com"
 
-st.set_page_config(page_title="PGY2 EM: Trust Verification", layout="wide")
-
-# ---------------------------------------------------------
-# 1. CONNECT TO GOOGLE SHEETS (Keep your existing data loaders here)
-# ---------------------------------------------------------
-sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=1033342405&single=true&output=csv"
-responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=589997778&single=true&output=csv"
-schedule_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=751471446&single=true&output=csv"
-
 @st.cache_data(ttl=60)
-def load_data():
+def load_all_data():
     try:
-        curr_df = pd.read_csv(sheet_url)
-        if 'Status' in curr_df.columns:
-            curr_df = curr_df[curr_df['Status'] == 'Active']
-        eval_df = pd.read_csv(responses_url)
-        sched_df = pd.read_csv(schedule_url) 
-        return curr_df, eval_df, sched_df
+        curr = pd.read_csv(sheet_url)
+        resp = pd.read_csv(responses_url)
+        sched = pd.read_csv(schedule_url)
+        user_db = pd.read_csv(users_url)
+        return curr, resp, sched, user_db
     except Exception as e:
-        st.error(f"Data Load Error: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame() 
+        st.error(f"Critical Data Load Error: {e}")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-# Helper function for Learner Mode formatting
-def display_objectives(df, target_level):
-    if 'Competence Level (Miller)' in df.columns:
-        df['Competence Level (Miller)'] = df['Competence Level (Miller)'].astype(str)
-        level_items = df[df['Competence Level (Miller)'].str.contains(target_level, na=False)]
-        if not level_items.empty:
-            for index, row in level_items.iterrows():
-                activity = row.get('Activity', 'Objective text missing')
-                st.info(f"**Task:** {activity}")
-                if 'Web Link' in row and pd.notna(row['Web Link']):
-                    st.link_button("📄 Open Resource", row['Web Link'])
-        else:
-            st.write(f"No Level {target_level} objectives found for this module.")
+def display_objectives(df, level):
+    filtered = df[df['Competence Level (Miller)'].astype(str) == str(level)]
+    if not filtered.empty:
+        for _, row in filtered.iterrows():
+            st.markdown(f"✅ **{row['Activity']}**")
+            if pd.notna(row['ASHP Objective']):
+                st.caption(f"🎯 Objective: {row['ASHP Objective']}")
+    else:
+        st.info(f"No Level {level} objectives found for this module.")
 
-# ---------------------------------------------------------
-# 2. THE USER DATABASE (Powered by Google Sheets)
-# ---------------------------------------------------------
-import bcrypt # Add this at the top of Section 2
+# 3. DATA INITIALIZATION (Now it will find the function!)
+curriculum_df, eval_df, schedule_df, users_df = load_all_data()
 
-# 🚨 PASTE YOUR 'USER DIRECTORY' CSV LINK HERE:
-users_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQVGthqSsiAk6txg7baS6n2stL4cLIP9kBOLEHx9W86W8KOjxUccExJugw8dB9-HxRh13M5CRanNCBZ/pub?gid=389769523&single=true&output=csv"
-
-@st.cache_data(ttl=60)
-def load_users():
-    try:
-        return pd.read_csv(users_url)
-    except:
-        return pd.DataFrame()
-
-users_df = load_users()
-
+# 4. AUTHENTICATION SETUP
 credentials = {"usernames": {}}
-
 if not users_df.empty:
-    for index, row in users_df.iterrows():
-        username = str(row['Username']).strip()
-        raw_password = str(row['Password']).strip()
+    for _, row in users_df.iterrows():
+        uname = str(row['Username']).strip()
+        raw_pw = str(row['Password']).strip()
+        # Hash on the fly for security
+        hpw = bcrypt.hashpw(raw_pw.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         
-        # 1. THE SECURITY FIX: Hash the password on-the-fly
-        # This converts "hansolo" into a secure bcrypt hash before the app reads it
-        hashed_password = bcrypt.hashpw(raw_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        # Role mapping
+        role = str(row['Role']).strip().lower()
+        if role == "rpd": r_internal = "admin"
+        elif role == "resident": r_internal = "learner"
+        else: r_internal = "preceptor"
         
-        # 2. THE VOCABULARY FIX: Translate the Google Sheet roles to the App's internal roles
-        sheet_role = str(row['Role']).strip().lower()
-        
-        if sheet_role == "rpd":
-            internal_role = "admin"
-        elif sheet_role == "resident":
-            internal_role = "learner"
-        else:
-            internal_role = "preceptor"
-        
-        # Build the secure user profile
-        credentials["usernames"][username] = {
-            "email": str(row['Email']).strip(),
-            "name": str(row['Name']).strip(),
-            "password": hashed_password,
-            "role": internal_role
+        credentials["usernames"][uname] = {
+            "email": str(row['Email']),
+            "name": str(row['Name']),
+            "password": hpw,
+            "role": r_internal
         }
 
-# Initialize the authenticator with the newly hashed dictionary
-authenticator = stauth.Authenticate(
-    credentials, 
-    "residency_dashboard", 
-    "abcdef", 
-    cookie_expiry_days=30
-)
-# ---------------------------------------------------------
-# 3. THE SECURE ROUTING SYSTEM
-# ---------------------------------------------------------
-try:
-    authenticator.login()
-except Exception as e:
-    st.error(e)
+authenticator = stauth.Authenticate(credentials, "residency_db", "auth_key", cookie_expiry_days=30)
 
-# We check Streamlit's internal memory (session_state) to see if they logged in
-if st.session_state.get("authentication_status") is False:
-    st.error("❌ Username/password is incorrect")
-    
-elif st.session_state.get("authentication_status") is None:
-    st.warning("🔒 Please enter your username and password")
-    
-elif st.session_state.get("authentication_status") is True:
-    
-    # --- IF LOGGED IN SUCCESSFULLY ---
-    name = st.session_state["name"]
-    username = st.session_state["username"]
+# 5. MAIN APP LOGIC
+name, authentication_status, username = authenticator.login("Login", "main")
+
+if authentication_status:
     user_role = credentials["usernames"][username]["role"]
-    
     authenticator.logout("Logout", "sidebar")
-    st.sidebar.success(f"Welcome, *{name}*")
-    
-    # Grab the Resident Roster so all rooms can use it
-    if 'Resident Roster' in curriculum_df.columns:
-        active_residents = curriculum_df['Resident Roster'].dropna().unique().tolist()
-        active_residents.insert(0, "Select Learner...") 
-    else:
-        active_residents = ["⚠️ Add 'Resident Roster' column"]
+    st.sidebar.success(f"Logged in: {name}")
+
+    # ROOM C: RPD DASHBOARD
+    if user_role == "admin":
+        st.title("📈 RPD Status Board")
+        if not eval_df.empty:
+            st.dataframe(eval_df.tail(10)) # Simple view to check connectivity
+        st.divider()
+
+    # ROOM B: PRECEPTOR TOOLS
+    if user_role in ["admin", "preceptor"]:
+        st.title("👨‍🏫 Evaluation Tool")
+        # Logic for dropdowns and Google Form submission goes here
+        st.divider()
+
+    # ROOM A: LEARNER JOURNEY
+    if user_role == "learner":
+        st.title(f"👋 Welcome, {name}")
+        
+        # Schedule Widget
+        st.subheader("📅 Your Next 3 Shifts")
+        if not schedule_df.empty:
+            # Match by name
+            my_sched = schedule_df[schedule_df['Resident Name'].str.contains(name, na=False, case=False)]
+            if not my_sched.empty:
+                for _, row in my_sched.head(3).iterrows():
+                    st.info(f"**{row['Start Date']}** - {row['Subject']}")
+        st.divider()
+
+    # SHARED RESOURCE LIBRARY
+    st.header("📚 Curriculum Library")
+    # Existing Tab Logic goes here
+
+elif authentication_status is False:
+    st.error("Username/password is incorrect")
+elif authentication_status is None:
+    st.warning("Please enter your username and password")
 
     # =========================================================
     # ROOM C: THE RPD DASHBOARD (ADMIN ONLY) 
