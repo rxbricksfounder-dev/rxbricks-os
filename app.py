@@ -239,11 +239,46 @@ elif user_role == "preceptor":
         sel_topic = st.selectbox("Activity", topics)
         
         activity_row = curriculum_df[curriculum_df['Topic'] == sel_topic].iloc[0]
-        st.info(f"**ASHP Objective:** {activity_row['ASHP Objective']}")
-        zone = st.radio("Entrustment Zone:", ["Zone 1: Direct", "Zone 2: Proactive", "Zone 3: Reactive", "Zone 4: Independent"])
+        st.info(f"**ASHP Objective:** {activity_row['ASHP Objective']}\n\n**Sub-Objective:** {activity_row['ASHP Sub-Objective']}")
         
-        if st.button("Submit Evaluation"):
-            st.success("Evaluation logged to Master Database.")
+        zone = st.radio("Entrustment Zone:", [
+            "Zone 1: Direct Supervision (Preceptor present for all steps)", 
+            "Zone 2: Proactive Supervision (Preceptor available, reviews all plans)", 
+            "Zone 3: Reactive Supervision (Preceptor available on demand)", 
+            "Zone 4: Independent (Resident practices independently)"
+        ])
+        
+        # --- PHARMACADEMIC NARRATIVE GENERATOR ---
+        st.subheader("📝 Pharmacademic Narrative Generator")
+        st.markdown("Add your qualitative feedback below. When submitted, a copy-pasteable summary will generate for Pharmacademic.")
+        
+        strengths = st.text_area("Key Strengths (What went well):")
+        improvements = st.text_area("Areas for Improvement (Next steps):")
+        
+        if st.button("Generate & Submit Evaluation", type="primary"):
+            st.success(f"Evaluation for {target_res} logged internally.")
+            
+            # Build the transposition text
+            pharmacademic_text = f"""RESIDENT: {target_res}
+ACTIVITY: {sel_topic} ({sel_cat})
+ASHP OBJECTIVE: {activity_row['ASHP Objective']}
+SUB-OBJECTIVE: {activity_row['ASHP Sub-Objective']}
+
+ACHIEVED ENTRUSTMENT LEVEL: 
+{zone}
+
+STRENGTHS / POSITIVE BEHAVIORS:
+{strengths if strengths.strip() else 'No specific strengths noted for this encounter.'}
+
+AREAS FOR GROWTH / NEXT STEPS:
+{improvements if improvements.strip() else 'No specific areas for improvement noted for this encounter.'}
+
+*This bedside evaluation was logged via RxBricks EM Trust Verification.*"""
+            
+            st.divider()
+            st.write("**📋 Ready for Pharmacademic:** Click the copy icon in the top right corner of the box below to transpose.")
+            # st.code automatically creates a visually distinct box with a copy-to-clipboard button
+            st.code(pharmacademic_text, language="markdown")
             
     st.divider()
     render_curriculum(user_role, user_tier)
