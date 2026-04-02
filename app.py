@@ -77,15 +77,7 @@ if not users_df.empty:
 authenticator = stauth.Authenticate(credentials, "residency_db", "auth_key", cookie_expiry_days=30)
 
 # 5. MAIN APP LOGIC
-# Call the login widget
-authenticator.login(location="main")
-
-# Manually retrieve the variables from Streamlit's session state
-name = st.session_state.get("name")
-authentication_status = st.session_state.get("authentication_status")
-username = st.session_state.get("username")
-
-# Call the login widget
+# Make sure this is the ONLY time login() appears in your code!
 authenticator.login(location="main")
 
 # Manually retrieve the variables from Streamlit's session state
@@ -96,13 +88,12 @@ username = st.session_state.get("username")
 # 1. STOP UNAUTHORIZED USERS
 if authentication_status is False:
     st.error("Username/password is incorrect")
-    st.stop() # Halts the app completely
+    st.stop()
 elif authentication_status is None:
     st.warning("Please enter your username and password")
-    st.stop() # Halts the app completely
+    st.stop()
 
 # 2. PROCEED FOR AUTHORIZED USERS
-# If the script makes it to this line, they are successfully logged in!
 user_role = credentials["usernames"][username]["role"]
 authenticator.logout(location="sidebar")
 st.sidebar.success(f"Logged in: {name}")
