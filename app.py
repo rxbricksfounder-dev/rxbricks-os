@@ -85,6 +85,35 @@ name = st.session_state.get("name")
 authentication_status = st.session_state.get("authentication_status")
 username = st.session_state.get("username")
 
+# Call the login widget
+authenticator.login(location="main")
+
+# Manually retrieve the variables from Streamlit's session state
+name = st.session_state.get("name")
+authentication_status = st.session_state.get("authentication_status")
+username = st.session_state.get("username")
+
+# 1. STOP UNAUTHORIZED USERS
+if authentication_status is False:
+    st.error("Username/password is incorrect")
+    st.stop() # Halts the app completely
+elif authentication_status is None:
+    st.warning("Please enter your username and password")
+    st.stop() # Halts the app completely
+
+# 2. PROCEED FOR AUTHORIZED USERS
+# If the script makes it to this line, they are successfully logged in!
+user_role = credentials["usernames"][username]["role"]
+authenticator.logout(location="sidebar")
+st.sidebar.success(f"Logged in: {name}")
+
+# =========================================================
+# ROOM C: THE RPD DASHBOARD (ADMIN ONLY) 
+# =========================================================
+if user_role == "admin":
+    st.title("📈 Live Resident Status Board")
+    # ... rest of your code ...
+
 if authentication_status:
     user_role = credentials["usernames"][username]["role"]
     authenticator.logout(location="sidebar")
