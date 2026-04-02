@@ -16,6 +16,23 @@ responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p9
 users_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1844709292&single=true&output=csv"
 schedule_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=2040997103&single=true&output=csv"
 
+@st.cache_data(ttl=60)
+def load_all_data():
+    links = {
+        "Curriculum": sheet_url,
+        "Evaluations": responses_url,
+        "Users": users_url,
+        "Schedule": schedule_url
+    }
+    data = {}
+    for name, url in links.items():
+        try:
+            data[name] = pd.read_csv(url)
+        except Exception as e:
+            st.error(f"❌ Error loading {name} sheet: {e}")
+            data[name] = pd.DataFrame()
+    return data["Curriculum"], data["Evaluations"], data["Schedule"], data["Users"]
+
 # 2. HELPER FUNCTIONS 
 def generate_gcal_link(title, date_str, start_time="08:00:00", end_time="17:00:00", details=""):
     try:
