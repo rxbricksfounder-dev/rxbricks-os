@@ -229,9 +229,13 @@ if user_role == "admin":
         res_list = eval_df['Resident Name'].dropna().unique().tolist()
         if res_list:
             sel_res = st.selectbox("Review Resident Progress:", res_list)
+            
+            # --- INJECT STEP TRACKER ---
+            render_step_tracker(sel_res)
+            st.write("---")
+            
             res_data = eval_df[eval_df['Resident Name'] == sel_res]
             
-            # --- NEW: DATA EXPORT & PROGRESS ---
             col1, col2 = st.columns(2)
             with col1:
                 st.metric("Total Completed Evaluations", len(res_data))
@@ -258,6 +262,11 @@ elif user_role == "preceptor":
     res_names = users_df[users_df['Role'].str.upper() == 'RESIDENT']['Name'].tolist()
     if res_names:
         target_res = st.selectbox("Select Resident", res_names)
+        
+        # --- INJECT STEP TRACKER ---
+        render_step_tracker(target_res)
+        st.write("---")
+        
         cats = curriculum_df['Category / Module'].unique()
         sel_cat = st.selectbox("Module", cats)
         topics = curriculum_df[curriculum_df['Category / Module'] == sel_cat]['Topic'].unique()
@@ -274,13 +283,11 @@ elif user_role == "preceptor":
         ])
         
         # --- AUTOGENERATE PHARMACADEMIC NARRATIVE LOGIC ---
-        # Clean up variables from the spreadsheet for natural sentence structure
         obj_text = str(activity_row['ASHP Objective']).lower()
         sub_obj_text = str(activity_row['ASHP Sub-Objective']).replace('"', '').strip()
         action_verb = str(activity_row.get('Action Verb', 'evaluate')).lower()
         cog_domain = str(activity_row.get('Cognitive Domain', 'application')).lower()
         
-        # Smart mapping based on the selected Entrustment Zone
         if "Zone 1" in zone:
             zone_narrative = "required direct and continuous supervision"
             next_steps = "Future encounters should focus on moving toward proactive supervision by having the resident formulate and propose plans prior to execution."
@@ -294,7 +301,6 @@ elif user_role == "preceptor":
             zone_narrative = "performed completely independently, serving as a reliable and competent practitioner"
             next_steps = "The resident has achieved mastery in this area and should continue independent practice and peer mentoring."
 
-        # Stitch together the formal Pharmacademic paragraph
         auto_narrative = (
             f"Resident {target_res} was evaluated on the clinical topic of {sel_topic}. "
             f"During this encounter, the resident {zone_narrative} in order to {sub_obj_text}.\n\n"
@@ -307,22 +313,23 @@ elif user_role == "preceptor":
         st.subheader("📝 Pharmacademic Narrative")
         st.markdown("This narrative was **auto-generated** based on the selected entrustment zone and ASHP curriculum taxonomy. You may edit the text below before copying.")
         
-        # Place the auto-generated text into a text area so the preceptor can edit it if they want to
         final_narrative = st.text_area("Final Evaluation Text (Editable):", value=auto_narrative, height=250)
         
         if st.button("Log Evaluation internally", type="primary"):
             st.success(f"Evaluation for {target_res} logged internally.")
-            
             st.write("**📋 Ready for Pharmacademic:** Click the copy icon in the top right corner of the box below to transpose.")
-            # Create the final copy-paste block
             st.code(final_narrative, language="markdown")
             
     st.divider()
     render_curriculum(user_role, user_tier)
-    
+
 # --- RESIDENT/LEARNER VIEW ---
 elif user_role == "learner":
     st.title(f"Welcome, {name}!")
+    
+    # --- INJECT STEP TRACKER (Always visible above tabs) ---
+    render_step_tracker(name)
+    st.write("---")
     
     tab1, tab2, tab3 = st.tabs(["📚 Curriculum & Resources", "📅 My Progress & Schedule", "💡 Encouragement"])
     
@@ -330,30 +337,6 @@ elif user_role == "learner":
         render_curriculum(user_role, user_tier)
         
     with tab2:
-        st.subheader("📈 My Evaluation Progress")
-        if not eval_df.empty and not curriculum_df.empty:
-            my_evals = eval_df[eval_df['Resident Name'] == name]
-            
-            # --- NEW: VISUAL PROGRESS TRACKING ---
-            total_topics = len(curriculum_df['Topic'].unique())
-            # Assumes your eval form has a column matching the exact Topic name. 
-            # If your eval sheet calls it 'Activity' instead, change 'Topic' to 'Activity' below:
-            completed_topics = my_evals['Activity'].nunique() if 'Activity' in my_evals.columns else len(my_evals) 
-            
-            # Calculate percentage, ensuring it doesn't break if total_topics is 0
-            progress_pct = min(completed_topics / total_topics, 1.0) if total_topics > 0 else 0.0
-            
-            st.write(f"**Curriculum Mastery:** {completed_topics} / {total_topics} Topics Evaluated")
-            st.progress(progress_pct)
-            st.divider()
-            
-            st.metric("Total Completed Evaluations", len(my_evals))
-            if not my_evals.empty:
-                st.dataframe(my_evals, use_container_width=True)
-        else:
-            st.info("No evaluation data found yet.")
-
-        st.divider()
         st.subheader("📅 Upcoming Shifts")
         if not schedule_df.empty:
             my_sched = schedule_df[schedule_df['Resident Name'] == name].head(5)
@@ -361,6 +344,16 @@ elif user_role == "learner":
                 st.table(my_sched[['Subject', 'Start Date', 'Start Time']])
             else:
                 st.info("No upcoming shifts scheduled.")
+        
+        st.divider()
+        st.subheader("📈 My Evaluation History")
+        if not eval_df.empty:
+            my_evals = eval_df[eval_df['Resident Name'] == name]
+            st.metric("Total Completed Evaluations", len(my_evals))
+            if not my_evals.empty:
+                st.dataframe(my_evals, use_container_width=True)
+        else:
+            st.info("No evaluation data found yet.")
             
     with tab3:
         st.subheader("Keep Pushing Forward!")
