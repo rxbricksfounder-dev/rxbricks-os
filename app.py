@@ -192,6 +192,31 @@ def render_curriculum(current_role, current_tier):
                 st.link_button(f"Open {res_type} in New Tab", res_url)
 
 # =========================================================
+# REUSABLE COMPONENT: STEP TRACKER
+# =========================================================
+def render_step_tracker(resident_name):
+    if eval_df.empty or curriculum_df.empty:
+        st.caption("👟 **Step Tracker:** Awaiting evaluation data...")
+        st.progress(0.0)
+        return
+        
+    total_topics = len(curriculum_df['Topic'].unique())
+    res_evals = eval_df[eval_df['Resident Name'] == resident_name]
+    
+    # Check which column the Google Form feeds into (usually 'Activity' or 'Topic')
+    if 'Activity' in res_evals.columns:
+        completed_topics = res_evals['Activity'].nunique()
+    elif 'Topic' in res_evals.columns:
+        completed_topics = res_evals['Topic'].nunique()
+    else:
+        completed_topics = len(res_evals) # Fallback
+        
+    progress_pct = min(completed_topics / total_topics, 1.0) if total_topics > 0 else 0.0
+    
+    st.markdown(f"**👟 Step Tracker:** `{completed_topics} / {total_topics}` Core Topics Evaluated")
+    st.progress(progress_pct)
+
+# =========================================================
 # DASHBOARDS
 # =========================================================
 
