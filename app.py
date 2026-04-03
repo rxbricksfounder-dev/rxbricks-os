@@ -315,33 +315,35 @@ elif user_role == "preceptor":
         st.subheader("📝 Pharmacademic Narrative")
         final_narrative = st.text_area("Review and edit your evaluation text. (Copy this for Pharmacademic):", value=auto_narrative, height=200)
         
-        # --- AUTO-EXPORT TO GOOGLE SHEET VIA FORM POST ---
+# --- AUTO-EXPORT TO GOOGLE SHEET VIA FORM POST ---
         if st.button("🚀 Submit to Master Database", type="primary"):
             
-            # 1. Put your form ID here (from your form URL)
-            form_id = "1FAIpQLSe8arpBwEQi2pzFEb7qKC9oag8SN11HEU-_gGN0vQkEWqvlYA" 
-            post_url = f"https://docs.google.com/forms/d/e/1FAIpQLSe8arpBwEQi2pzFEb7qKC9oag8SN11HEU-_gGN0vQkEWqvlYA/viewform?usp=pp_url"
+            # 1. Grab today's date formatted correctly for Google Forms (YYYY-MM-DD)
+            current_date = datetime.date.today().strftime("%Y-%m-%d")
             
-            # 2. Replace these 'entry.XXXXXX' keys with the exact numbers from your pre-filled link
-            # Add or remove entry keys depending on exactly how many questions are on your form!
+            # 2. Use /formResponse instead of /viewform to actually submit the data
+            post_url = "https://docs.google.com/forms/d/e/1FAIpQLSe8arpBwEQi2pzFEb7qKC9oag8SN11HEU-_gGN0vQkEWqvlYA/formResponse"
+            
+            # 3. The data dictionary (with all commas included!)
             form_data = {
-                "entry.1175930505": target_res,        # Example: Resident Name question
-                "entry.137559973": date
-                "entry.597824849": activity,         # Example: Activity/Topic question
-                "entry.575285059": ashp,              # Example: Zone question
-                "entry.930508246": blooms,   # Example: The narrative text box
-                "entry.411526759": zone
+                "entry.1175930505": target_res,                            # Resident Name
+                "entry.137559973": current_date,                           # Date
+                "entry.597824849": sel_topic,                              # Activity/Topic
+                "entry.575285059": activity_row['ASHP Objective'],         # ASHP Objective
+                "entry.930508246": activity_row['Cognitive Domain'],       # Bloom's Level
+                "entry.411526759": zone                                    # Zone
             }
             
             try:
                 # Send the data silently in the background
                 response = requests.post(post_url, data=form_data)
                 
+                # Google Forms returns 200 for a successful submission
                 if response.status_code == 200:
                     st.success(f"✅ Success! Evaluation for {target_res} securely logged to the Master Database.")
                     st.balloons()
                 else:
-                    st.error("⚠️ Submission failed. Please check your Form ID and Entry IDs.")
+                    st.error(f"⚠️ Submission failed with status code: {response.status_code}. Check your variables.")
             except Exception as e:
                 st.error(f"Error connecting to database: {e}")
             
