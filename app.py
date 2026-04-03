@@ -75,16 +75,22 @@ def render_curriculum(current_role, current_tier):
         st.warning("Curriculum data is currently unavailable.")
         return
 
-    st.sidebar.title("Vision 2026 Curriculum")
+    st.subheader("📚 Vision 2026 Curriculum Library")
     all_cats = curriculum_df['Category / Module'].dropna().unique()
-    sidebar_cat = st.sidebar.selectbox("Navigate Module", all_cats)
     
-    module_items = curriculum_df[curriculum_df['Category / Module'] == sidebar_cat]
-    selected_item_name = st.sidebar.selectbox("Select Resource", module_items['Topic'].unique())
+    # MOVED FROM SIDEBAR TO MAIN VIEW FOR BETTER TAB UX
+    col_nav1, col_nav2 = st.columns(2)
+    with col_nav1:
+        main_cat = st.selectbox("Navigate Module", all_cats, key="curr_cat_sel")
+    
+    module_items = curriculum_df[curriculum_df['Category / Module'] == main_cat]
+    with col_nav2:
+        selected_item_name = st.selectbox("Select Resource", module_items['Topic'].unique(), key="curr_top_sel")
     
     topic_items = module_items[module_items['Topic'] == selected_item_name]
     first_item = topic_items.iloc[0]
 
+    st.write("---")
     col1, col2 = st.columns([3, 1])
     with col1:
         st.subheader(f"📖 {first_item['Topic']}")
@@ -95,7 +101,6 @@ def render_curriculum(current_role, current_tier):
     if is_complete:
         st.success(f"Awesome job! '{first_item['Topic']}' marked as complete.")
 
-    # --- NEW: Added Miller's Competence Level to the caption ---
     epa_text = first_item.get('EPA', 'N/A')
     bloom_text = first_item.get('Cognitive Domain', 'N/A')
     miller_text = first_item.get('Competence Level (Miller)', 'N/A')
@@ -103,7 +108,6 @@ def render_curriculum(current_role, current_tier):
     st.caption(f"EPA: {epa_text} | Target (Bloom's): {bloom_text} | Competence (Miller's): {miller_text}")
     st.markdown(f"**Objective:** {first_item.get('ASHP Objective', 'N/A')}")
 
-    # NEW FIX: Convert everything to strings and handle blanks
     available_types = [
         str(res).strip() if pd.notna(res) and str(res).strip() != "" else f"Resource {i+1}" 
         for i, res in enumerate(topic_items['Resource Type'].tolist())
@@ -437,15 +441,35 @@ elif user_role == "learner":
     st.title(f"Welcome, {name}!")
 
     render_step_tracker(name)
-    # render_step_tracker(name) # Your existing tracker
     st.write("---")
     
-    tab1, tab2, tab3 = st.tabs(["🎯 Today's Plan", "📚 Curriculum", "📅 My Progress"])
+    tab1, tab2, tab3 = st.tabs(["🎯 Today's Plan", "📚 Curriculum Library", "📅 Schedule & Progress"])
     
     with tab1: # NEW RESIDENT TAB FOR DAILY OPERATIONS
         render_daily_operations(name)
         
-    with tab2:
+        st.write("---")
+        st.subheader("📖 Today's Recommended Study")
+        today_sched = get_todays_schedule(name)
+        
+        if not today_sched.empty and not curriculum_df.empty:
+            rot_sub = str(today_sched.iloc[0]['Subject']).upper()
+            possible_cats = curriculum_df['Category / Module'].dropna().unique()
+            
+            # Simple keyword matching between the schedule subject and the curriculum module
+            matches = [c for c in possible_cats if str(c).upper() in rot_sub or rot_sub in str(c).upper()]
+            
+            if matches:
+                st.success(f"**Curriculum Match!** Based on your shift ({rot_sub}), we recommend reviewing topics in the **{matches[0]}** module today.")
+            else:
+                st.info(f"You are scheduled for **{rot_sub}**. Check the Curriculum Library for related self-directed study.")
+                
+        st.caption("👉 Navigate to the **📚 Curriculum Library** tab to access your study guides, videos, and NotebookLM links.")
+        
+    with tab2: # FIXED: CURRICULUM PROPERLY RESTORED HERE
+        render_curriculum(user_role, user_tier)
+        
+    with tab3: # FIXED: SCHEDULE MOVED HERE
         st.subheader("📅 Upcoming Shifts")
         if not schedule_df.empty:
             my_sched = schedule_df[schedule_df['Resident Name'] == name].head(5)
@@ -473,8 +497,3 @@ elif user_role == "learner":
                 st.info("No evaluation data found yet.")
         else:
             st.info("No evaluation data found yet.")
-            
-    with tab3:
-        st.subheader("Keep Pushing Forward!")
-        st.success("You are making great progress in your PGY2 EM Residency.")
-        st.markdown("> *\"Success is the sum of small efforts, repeated day in and day out.\"*")
