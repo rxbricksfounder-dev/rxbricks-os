@@ -346,12 +346,27 @@ elif user_role == "learner":
                 st.info("No upcoming shifts scheduled.")
         
         st.divider()
-        st.subheader("📈 My Evaluation History")
+        st.subheader("📈 My 10 Most Recent Evaluations")
+        
         if not eval_df.empty:
+            # Filter to only this resident
             my_evals = eval_df[eval_df['Resident Name'] == name]
-            st.metric("Total Completed Evaluations", len(my_evals))
+            
             if not my_evals.empty:
-                st.dataframe(my_evals, use_container_width=True)
+                # Attempt to sort by Date if your Google Form column is named 'Date'
+                if 'Date' in my_evals.columns:
+                    # Convert to datetime for accurate sorting, then sort newest to oldest
+                    my_evals['Date'] = pd.to_datetime(my_evals['Date'], errors='coerce')
+                    recent_10 = my_evals.sort_values(by='Date', ascending=False).head(10)
+                else:
+                    # Fallback just in case the Date column is missing: grab the last 10 rows added
+                    recent_10 = my_evals.tail(10)
+                
+                # Show the total count, but only display the dataframe of the recent 10
+                st.metric("Total Lifetime Evaluations Logged", len(my_evals))
+                st.dataframe(recent_10, use_container_width=True)
+            else:
+                st.info("No evaluation data found yet.")
         else:
             st.info("No evaluation data found yet.")
             
