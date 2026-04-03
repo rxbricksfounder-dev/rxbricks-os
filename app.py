@@ -333,7 +333,7 @@ def render_daily_operations(resident_name):
         st.warning(f"No task mappings found for {rotation_subject}.")
         return
         
-    # 3. Dynamically generate the UI grouped by 'Clinical_Role'
+# 3. Dynamically generate the UI grouped by 'Clinical_Role'
     roles = daily_tasks['Clinical_Role'].dropna().unique()
     
     for role in roles:
@@ -345,9 +345,13 @@ def render_daily_operations(resident_name):
         for idx, task_row in role_tasks.iterrows():
             activity_text = task_row['Actionable_Activity']
             
-            # Extract just the code (e.g., "R1.1.6") from the full Sub-Objective string
-            full_sub_obj = str(task_row['ASHP_Sub_Objective'])
-            objective_code = full_sub_obj.split(' ')[0] if pd.notna(full_sub_obj) else "Goal"
+           raw_sub_obj = task_row['ASHP_Sub_Objective']
+            
+            if pd.notna(raw_sub_obj) and str(raw_sub_obj).strip() != "":
+                objective_code = str(raw_sub_obj).split(' ')[0]
+            else:
+                objective_code = "Goal"
+            # --- END OF NEW CODE ---
             
             # Combine Domain and Verb for the UI target (e.g., "Applying - Carry Out")
             target_level = str(task_row['Action_Verb'])
@@ -514,6 +518,7 @@ elif user_role == "learner":
         render_daily_operations(name)
         
         st.write("---")
+        render_assignments(name)
         st.subheader("📖 Today's Recommended Study")
         today_sched = get_todays_schedule(name)
         
