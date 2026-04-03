@@ -34,7 +34,7 @@ def load_all_data():
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 # Update the unpacking line to include assignments_df
-curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df = load_all_data()
+curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df = load__data()
 
 # 4. AUTHENTICATION SETUP
 credentials = {"usernames": {}}
@@ -375,12 +375,12 @@ def render_assignments(resident_name):
         
     # --- 1. USER FILTERING LOGIC ---
     if 'Assigned To' in assignments_df.columns:
-        # Fill blank cells with "All" so global assignments aren't accidentally dropped
-        assignments_df['Assigned To'] = assignments_df['Assigned To'].fillna("All")
+        # Fill blank cells with "All PGY2" so global assignments aren't accidentally dropped
+        assignments_df['Assigned To'] = assignments_df['Assigned To'].fillna("All PGY2")
         
-        # Create a mask: Keep row if resident's name is in the string OR if it contains "All"
+        # Create a mask: Keep row if resident's name is in the string OR if it contains "All PGY2"
         mask = assignments_df['Assigned To'].apply(
-            lambda x: resident_name.lower() in str(x).lower() or "all" in str(x).lower()
+            lambda x: resident_name.lower() in str(x).lower() or "All PGY2" in str(x).lower()
         )
         user_assignments = assignments_df[mask].copy() # Use copy to avoid setting warnings
     else:
@@ -442,14 +442,14 @@ def render_assignment_tracker():
     tracker_data = []
     
     if 'Assigned To' not in assignments_df.columns:
-        assignments_df['Assigned To'] = "All"
+        assignments_df['Assigned To'] = "All PGY2"
     else:
-        assignments_df['Assigned To'] = assignments_df['Assigned To'].fillna("All")
+        assignments_df['Assigned To'] = assignments_df['Assigned To'].fillna("All PGY2")
 
     for res in residents:
         # Filter assignments for this specific resident
         mask = assignments_df['Assigned To'].apply(
-            lambda x: res.lower() in str(x).lower() or "all" in str(x).lower()
+            lambda x: res.lower() in str(x).lower() or "All PGY2" in str(x).lower()
         )
         res_assignments = assignments_df[mask]
         
