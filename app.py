@@ -425,6 +425,99 @@ def render_assignments(resident_name):
                 if st.checkbox("2️⃣ Mark as Submitted", key=submit_key):
                     st.success("Marked as complete! Your RPD can now review your submission.")
 
+def render_assignment_tracker():
+    st.subheader("📋 Global Assignment Tracker")
+    
+    if assignments_df.empty:
+        st.info("No assignment data available to track.")
+        return
+
+    # 1. Get all active residents
+    residents = users_df[users_df['Role'].str.upper() == 'RESIDENT']['Name'].tolist()
+    if not residents:
+        st.warning("No residents found in the system.")
+        return
+
+    # 2. Build the master tracking list dynamically
+    tracker_data = []
+    
+    if 'Assigned To' not in assignments_df.columns:
+        assignments_df['Assigned To'] = "All"
+    else:
+        assignments_df['Assigned To'] = assignments_df['Assigned To'].fillna("All")
+
+    for res in residents:
+        # Filter assignments for this specific resident
+        mask = assignments_df['Assigned To'].apply(
+            lambda x: res.lower() in str(x).lower() or "all" in str(x).lower()
+        )
+        res_assignments = assignments_df[mask]
+        
+        for _, row in res_assignments.iterrows():
+            assign_title = row.get('Subject', 'Unknown Assignment')
+            start_date = row.get('Start Date', 'Ongoing')
+            
+            # --- STATUS CHECK LOGIC ---
+            # We cross-reference the master responses database (eval_df) 
+            # to see if the resident has submitted this specific assignment.
+            status = "⏳ Pending"
+            if not eval_df.empty:
+                # Adjust these column names if your responses sheet uses different headers
+                res_col = 'Resident Name' if 'Resident Name' in eval_df.columns else None
+                topic_col = 'Activity' if 'Activity' in eval_df.columns else ('Topic' if 'Topic' in eval_df.columns else None)
+                
+                if res_col and topic_col:
+                    # Check if a row exists with this resident AND this assignment title
+                    match = eval_df[(eval_df[res_col] == res) & (eval_df[topic_col] == assign_title)]
+                    if not match.empty:
+                        status = "✅ Submitted"
+
+            tracker_data.append({
+                "Resident Name": res,
+                "Assignment Subject": assign_title,
+                "Due Date": start_date,
+                "Status": status
+            })
+
+    tracker_df = pd.DataFrame(tracker_data)
+
+    if tracker_df.empty:
+        st.info("No assignments currently mapped to residents.")
+        return
+
+    # 3. Visual Tracker UI
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Assigned Tasks", len(tracker_df))
+    with col2:
+        completed = len(tracker_df[tracker_df['Status'] == '✅ Submitted'])
+        st.metric("Total Completed", completed)
+    with col3:
+        completion_rate = (completed / len(tracker_df)) * 100 if len(tracker_df) > 0 else 0
+        st.metric("Program Completion Rate", f"{completion_rate:.1f}%")
+
+    # Filter by resident for a focused RPD view
+    selected_res = st.selectbox("Filter by Resident:", ["All Residents"] + residents)
+    
+    display_df = tracker_df if selected_res == "All Residents" else tracker_df[tracker_df["Resident Name"] == selected_res]
+    
+    st.dataframe(display_df, use_container_width=True)
+
+    # 4. Pharmacademic Export Function
+    st.write("---")
+    st.subheader("📥 Export for Pharmacademic")
+    st.caption("Generate a CSV report of these assignments to upload into Pharmacademic's document tracking system.")
+    
+    # Pharmacademic prefers clean CSVs. We encode to UTF-8 to prevent formatting errors.
+    csv_data = display_df.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label=f"Download Report ({selected_res})",
+        data=csv_data,
+        file_name=f"Pharmacademic_Assignment_Report_{selected_res.replace(' ', '_')}_{datetime.date.today()}.csv",
+        mime="text/csv",
+        type="primary"
+    )
+
 # =========================================================
 # DASHBOARDS
 # =========================================================
@@ -432,7 +525,7 @@ def render_assignments(resident_name):
 # --- ADMIN VIEW (RPD) ---
 if user_role == "admin":
     st.title("📈 Program Director Dashboard")
-    tab1, tab2, tab3 = st.tabs(["📊 Reports & Progress", "👨‍🏫 Submit Evaluation", "📅 Daily Operations Oversight"])
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 Reports & Progress", "👨‍🏫 Submit Evaluation", "📅 Daily Operations", "📋 Assignment Tracker"])
     
     with tab1:
         st.subheader("Resident Assignment Tracking")
@@ -474,6 +567,10 @@ if user_role == "admin":
             st.info("Metrics for clinical policy completions (e.g., Discharge Culture Follow-ups) will populate here as residents check off their daily steps.")
         else:
             st.warning("No scheduled activities found for today.")
+    
+    with tab4: # NEW RPD ASSIGNMENT TRACKER TAB
+        render_assignment_tracker()
+        
 # --- PRECEPTOR VIEW ---
 elif user_role == "preceptor":
     st.title("👨‍🏫 Preceptor Dashboard")
