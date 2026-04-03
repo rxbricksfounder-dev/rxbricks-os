@@ -345,7 +345,9 @@ def render_daily_operations(resident_name):
         for idx, task_row in role_tasks.iterrows():
             activity_text = task_row['Actionable_Activity']
             
-           raw_sub_obj = task_row['ASHP_Sub_Objective']
+            # --- START OF NEW CODE ---
+            # Evaluate the raw data before converting to string to prevent [nan]
+            raw_sub_obj = task_row['ASHP_Sub_Objective']
             
             if pd.notna(raw_sub_obj) and str(raw_sub_obj).strip() != "":
                 objective_code = str(raw_sub_obj).split(' ')[0]
