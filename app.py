@@ -105,8 +105,12 @@ def render_curriculum(current_role, current_tier):
     if is_complete:
         st.success(f"Awesome job! '{first_item['Topic']}' marked as complete.")
 
-    # Using .get() for safety in case columns are missing
-    st.caption(f"EPA: {first_item.get('EPA', 'N/A')} | Target: {first_item.get('Cognitive Domain', 'N/A')}")
+    # --- NEW: Added Miller's Competence Level to the caption ---
+    epa_text = first_item.get('EPA', 'N/A')
+    bloom_text = first_item.get('Cognitive Domain', 'N/A')
+    miller_text = first_item.get('Competence Level (Miller)', 'N/A')
+    
+    st.caption(f"EPA: {epa_text} | Target (Bloom's): {bloom_text} | Competence (Miller's): {miller_text}")
     st.markdown(f"**Objective:** {first_item.get('ASHP Objective', 'N/A')}")
 
     available_types = topic_items['Resource Type'].tolist()
@@ -219,8 +223,10 @@ def render_evaluation_tool():
     # Safely get variables using .get() to prevent KeyErrors
     raw_obj = activity_row.get('ASHP Objective', 'Patient Care Objective')
     raw_sub_obj = activity_row.get('ASHP Sub-Objective', 'Perform clinical duties')
+    raw_miller = activity_row.get('Competence Level (Miller)', 'N/A')
     
-    st.info(f"**ASHP Objective:** {raw_obj}\n\n**Sub-Objective:** {raw_sub_obj}")
+    # --- NEW: Display Miller's level for the Preceptor ---
+    st.info(f"**Target Competence (Miller's):** {raw_miller}\n\n**ASHP Objective:** {raw_obj}\n\n**Sub-Objective:** {raw_sub_obj}")
     
     zone = st.radio("Entrustment Zone:", [
         "Zone 1: Direct Supervision", 
@@ -234,6 +240,7 @@ def render_evaluation_tool():
     sub_obj_text = str(raw_sub_obj).replace('"', '').strip()
     action_verb = str(activity_row.get('Action Verb', 'evaluate')).lower()
     cog_domain = str(activity_row.get('Cognitive Domain', 'application')).lower()
+    miller_level = str(raw_miller).lower()
     
     if "Zone 1" in zone:
         zone_narrative = "required direct and continuous supervision"
@@ -248,10 +255,11 @@ def render_evaluation_tool():
         zone_narrative = "performed completely independently, serving as a reliable and competent practitioner"
         next_steps = "The resident has achieved mastery in this area and should continue independent practice and peer mentoring."
 
+    # --- NEW: Injected Miller's Level into the formal paragraph ---
     auto_narrative = (
         f"Resident {target_res} was evaluated on the clinical topic of {sel_topic}. "
         f"During this encounter, the resident {zone_narrative} in order to {sub_obj_text}.\n\n"
-        f"Operating within the cognitive domain of {cog_domain}, the resident demonstrated the ability to {action_verb} "
+        f"Operating within the cognitive domain of {cog_domain} and targeting the '{miller_level}' level of clinical competence, the resident demonstrated the ability to {action_verb} "
         f"as it relates to the broader program goal to {obj_text}.\n\n"
         f"Targeted Next Steps: {next_steps}"
     )
