@@ -14,6 +14,7 @@ sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJt
 responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1012642150&single=true&output=csv"
 users_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1844700463&single=true&output=csv"
 schedule_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1966612732&single=true&output=csv"
+assignments_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1293289954&single=true&output=csv"
 
 @st.cache_data(ttl=60)
 def load_all_data():
@@ -23,12 +24,17 @@ def load_all_data():
         resp = pd.read_csv(clean(responses_url))
         sched = pd.read_csv(clean(schedule_url))
         user_db = pd.read_csv(clean(users_url))
-        return curr, resp, sched, user_db
+        
+        # NEW: Load the assignments tab
+        assign_df = pd.read_csv(clean(assignments_url)) 
+        
+        return curr, resp, sched, user_db, assign_df
     except Exception as e:
         st.error(f"⚠️ Link Verification Error: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-curriculum_df, eval_df, schedule_df, users_df = load_all_data()
+# Update the unpacking line to include assignments_df
+curriculum_df, eval_df, schedule_df, users_df, assignments_df = load_all_data()
 
 # 4. AUTHENTICATION SETUP
 credentials = {"usernames": {}}
@@ -342,6 +348,55 @@ def render_daily_operations(resident_name):
         # Pulling specific core knowledge activities from the Master Evaluation sheet
         st.info("**R1.1.4:** Analyze and assess information on which to base safe and effective medication therapy.\n\n*Activity Focus:* Select the best medication for all emergent clinical scenarios. Differentiate hemodynamic responses.")
         st.checkbox("Log cognitive application in Pharmacademic for today's shift")
+
+def render_assignments(resident_name):
+    """Pulls from 5_Assignments_EM and provides submission links."""
+    st.subheader("📝 Pending Assignments & Tasks")
+    
+    if assignments_df.empty:
+        st.info("No assignments data loaded.")
+        return
+        
+    # Assuming your assignments sheet has columns like 'Subject', 'Start Date', and ideally a 'Form Link'
+    # We will filter for assignments that are roughly "current" (you can adjust the logic to show all pending)
+    # For now, let's just show the next 5 upcoming assignments
+    # (Ensure 'Start Date' is treated as datetime for proper sorting)
+    if 'Start Date' in assignments_df.columns:
+        assignments_df['Start Date'] = pd.to_datetime(assignments_df['Start Date'], errors='coerce')
+        today = pd.to_datetime(datetime.date.today())
+        
+        # Filter for assignments from today onward
+        upcoming_assign = assignments_df[assignments_df['Start Date'] >= today].sort_values(by='Start Date').head(5)
+    else:
+        upcoming_assign = assignments_df.head(5)
+
+    if upcoming_assign.empty:
+        st.success("🎉 You have no pending assignments right now!")
+        return
+
+    # Create a clean UI for each assignment
+    for idx, row in upcoming_assign.iterrows():
+        assign_title = row.get('Subject', 'Unknown Assignment')
+        due_date = row['Start Date'].strftime('%B %d, %Y') if pd.notna(row.get('Start Date')) else "Ongoing"
+        
+        # If you have a column for the form link in 5_Assignments_EM, use it. 
+        # If not, we will use a fallback Google Form link.
+        form_link = row.get('Form Link', "https://docs.google.com/forms/d/e/1FAIpQLScB7n7l8VaKUGHJo60TCngFhnMF_YiBV-S-pY7xQO1p5bAkQg/viewform?usp=sharing&ouid=103419041044944178788") 
+        if pd.isna(form_link): form_link = "https://docs.google.com/forms/d/e/1FAIpQLScB7n7l8VaKUGHJo60TCngFhnMF_YiBV-S-pY7xQO1p5bAkQg/viewform?usp=sharing&ouid=103419041044944178788"
+
+        with st.expander(f"📌 **{assign_title}** — Due: {due_date}", expanded=(idx==0)):
+            st.markdown(f"**Instructions:** Complete the required documentation for `{assign_title}`.")
+            
+            col1, col2 = st.columns([1, 1])
+            
+            with col1:
+                st.link_button("1️⃣ Open Assignment Form", form_link, type="primary", use_container_width=True)
+                
+            with col2:
+                # A visual toggle so the resident can check it off their list
+                submit_key = f"submit_{resident_name}_{assign_title}_{idx}"
+                if st.checkbox("2️⃣ Mark as Submitted", key=submit_key):
+                    st.success("Marked as complete! Your RPD can now review your submission.")
 
 # =========================================================
 # DASHBOARDS
