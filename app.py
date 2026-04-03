@@ -327,7 +327,7 @@ elif user_role == "preceptor":
             form_data = {
                 "entry.1175930505": target_res,        # Example: Resident Name question
                 "entry.137559973": date
-                "entry.597824849": sel_topic,         # Example: Activity/Topic question
+                "entry.597824849": activity,         # Example: Activity/Topic question
                 "entry.575285059": ashp,              # Example: Zone question
                 "entry.930508246": blooms,   # Example: The narrative text box
                 "entry.411526759": zone
