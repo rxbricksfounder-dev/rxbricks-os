@@ -366,39 +366,50 @@ def render_daily_operations(resident_name):
                 key=checkbox_key
             )
 def render_assignments(resident_name):
-    """Pulls from 5_Assignments_EM and provides submission links."""
+    """Pulls from 5_Assignments_EM and provides submission links, filtered by user."""
     st.subheader("📝 Pending Assignments & Tasks")
     
     if assignments_df.empty:
         st.info("No assignments data loaded.")
         return
         
-    # Assuming your assignments sheet has columns like 'Subject', 'Start Date', and ideally a 'Form Link'
-    # We will filter for assignments that are roughly "current" (you can adjust the logic to show all pending)
-    # For now, let's just show the next 5 upcoming assignments
-    # (Ensure 'Start Date' is treated as datetime for proper sorting)
-    if 'Start Date' in assignments_df.columns:
-        assignments_df['Start Date'] = pd.to_datetime(assignments_df['Start Date'], errors='coerce')
+    # --- 1. USER FILTERING LOGIC ---
+    if 'Assigned To' in assignments_df.columns:
+        # Fill blank cells with "All" so global assignments aren't accidentally dropped
+        assignments_df['Assigned To'] = assignments_df['Assigned To'].fillna("All")
+        
+        # Create a mask: Keep row if resident's name is in the string OR if it contains "All"
+        mask = assignments_df['Assigned To'].apply(
+            lambda x: resident_name.lower() in str(x).lower() or "all" in str(x).lower()
+        )
+        user_assignments = assignments_df[mask].copy() # Use copy to avoid setting warnings
+    else:
+        # Fallback if the column hasn't been added to the sheet yet
+        user_assignments = assignments_df.copy()
+
+    # --- 2. DATE FILTERING LOGIC ---
+    if 'Start Date' in user_assignments.columns:
+        user_assignments['Start Date'] = pd.to_datetime(user_assignments['Start Date'], errors='coerce')
         today = pd.to_datetime(datetime.date.today())
         
         # Filter for assignments from today onward
-        upcoming_assign = assignments_df[assignments_df['Start Date'] >= today].sort_values(by='Start Date').head(5)
+        upcoming_assign = user_assignments[user_assignments['Start Date'] >= today].sort_values(by='Start Date').head(5)
     else:
-        upcoming_assign = assignments_df.head(5)
+        upcoming_assign = user_assignments.head(5)
 
     if upcoming_assign.empty:
         st.success("🎉 You have no pending assignments right now!")
         return
 
-    # Create a clean UI for each assignment
+    # --- 3. UI RENDERING ---
     for idx, row in upcoming_assign.iterrows():
         assign_title = row.get('Subject', 'Unknown Assignment')
         due_date = row['Start Date'].strftime('%B %d, %Y') if pd.notna(row.get('Start Date')) else "Ongoing"
         
-        # If you have a column for the form link in 5_Assignments_EM, use it. 
-        # If not, we will use a fallback Google Form link.
-        form_link = row.get('Form Link', "https://docs.google.com/forms/d/e/1FAIpQLScB7n7l8VaKUGHJo60TCngFhnMF_YiBV-S-pY7xQO1p5bAkQg/viewform?usp=sharing&ouid=103419041044944178788") 
-        if pd.isna(form_link): form_link = "https://docs.google.com/forms/d/e/1FAIpQLScB7n7l8VaKUGHJo60TCngFhnMF_YiBV-S-pY7xQO1p5bAkQg/viewform?usp=sharing&ouid=103419041044944178788"
+        # Form link logic
+        form_link = row.get('Form Link')
+        if pd.isna(form_link) or str(form_link).strip() == "": 
+            form_link = "https://docs.google.com/forms/d/e/1FAIpQLScB7n7l8VaKUGHJo60TCngFhnMF_YiBV-S-pY7xQO1p5bAkQg/viewform?usp=sharing&ouid=103419041044944178788"
 
         with st.expander(f"📌 **{assign_title}** — Due: {due_date}", expanded=(idx==0)):
             st.markdown(f"**Instructions:** Complete the required documentation for `{assign_title}`.")
@@ -409,7 +420,7 @@ def render_assignments(resident_name):
                 st.link_button("1️⃣ Open Assignment Form", form_link, type="primary", use_container_width=True)
                 
             with col2:
-                # A visual toggle so the resident can check it off their list
+                # Visual toggle so the resident can check it off
                 submit_key = f"submit_{resident_name}_{assign_title}_{idx}"
                 if st.checkbox("2️⃣ Mark as Submitted", key=submit_key):
                     st.success("Marked as complete! Your RPD can now review your submission.")
