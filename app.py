@@ -380,7 +380,7 @@ def render_assignments(resident_name):
         
         # Create a mask: Keep row if resident's name is in the string OR if it contains "All PGY2"
         mask = assignments_df['Assigned To'].apply(
-            lambda x: resident_name.lower() in str(x).lower() or "All PGY2" in str(x).lower()
+            lambda x: resident_name.lower() in str(x).lower() or "all" in str(x).lower()
         )
         user_assignments = assignments_df[mask].copy() # Use copy to avoid setting warnings
     else:
@@ -449,7 +449,7 @@ def render_assignment_tracker():
     for res in residents:
         # Filter assignments for this specific resident
         mask = assignments_df['Assigned To'].apply(
-            lambda x: res.lower() in str(x).lower() or "All PGY2" in str(x).lower()
+            lambda x: res.lower() in str(x).lower() or "all" in str(x).lower()
         )
         res_assignments = assignments_df[mask]
         
