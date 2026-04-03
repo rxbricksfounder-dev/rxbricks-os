@@ -15,6 +15,7 @@ responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p9
 users_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1844700463&single=true&output=csv"
 schedule_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1966612732&single=true&output=csv"
 assignments_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1293289954&single=true&output=csv"
+tasks_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=230208050&single=true&output=csv"
 
 @st.cache_data(ttl=60)
 def load_all_data():
@@ -24,17 +25,16 @@ def load_all_data():
         resp = pd.read_csv(clean(responses_url))
         sched = pd.read_csv(clean(schedule_url))
         user_db = pd.read_csv(clean(users_url))
+        assign_df = pd.read_csv(clean(assignments_url))
+        rotation_tasks_df = pd.read_csv(clean(tasks_url))
         
-        # NEW: Load the assignments tab
-        assign_df = pd.read_csv(clean(assignments_url)) 
-        
-        return curr, resp, sched, user_db, assign_df
+        return curr, resp, sched, user_db, assign_df, rotation_tasks_df
     except Exception as e:
         st.error(f"⚠️ Link Verification Error: {e}")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 # Update the unpacking line to include assignments_df
-curriculum_df, eval_df, schedule_df, users_df, assignments_df = load_all_data()
+curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df = load_all_data()
 
 # 4. AUTHENTICATION SETUP
 credentials = {"usernames": {}}
@@ -314,41 +314,51 @@ def get_todays_schedule(target_name=None):
     return today_sched
 
 def render_daily_operations(resident_name):
-    """Generates the daily checklist based on rotation assignment."""
     st.subheader("🎯 Today's Clinical Policies & Activities")
     
+    # 1. Get today's rotation from the schedule
     today_sched = get_todays_schedule(resident_name)
     
     if today_sched.empty:
-        st.info("You have no specific clinical rotations scheduled for today. Use this time for project work or curriculum review.")
+        st.info("No specific clinical rotations scheduled today. Focus on curriculum modules or project work.")
         return
 
     rotation_subject = today_sched.iloc[0]['Subject']
     st.markdown(f"**Assigned Rotation:** `{rotation_subject}`")
     
-    # Mock routing based on rotation name (You can expand this mapping)
-    if "EM" in str(rotation_subject).upper() or "CLINICAL" in str(rotation_subject).upper():
-        st.write("---")
-        st.markdown("### 🧫 Discharge Culture Follow-Up Protocol")
-        st.caption("Reference: CTMFH-PGY2-EM - CLINICAL POLICY - 10")
+    # 2. Filter the mapping dataframe
+    daily_tasks = rotation_tasks_df[rotation_tasks_df['Rotation_ID'] == rotation_subject]
+    
+    if daily_tasks.empty:
+        st.warning(f"No task mappings found for {rotation_subject}.")
+        return
         
-        # Pulling specific tasks from the provided Clinical Policy 10
-        c1 = st.checkbox("1. Identify Discharged Patients with Pending Cultures (Review EMR)")
-        c2 = st.checkbox("2. Review Culture Results & Susceptibility Testing")
-        c3 = st.checkbox("3. Assess Appropriateness of Initial Empiric Therapy")
-        c4 = st.checkbox("4. Identify Potential Discrepancies & Need for Therapy Adjustment")
-        c5 = st.checkbox("5. Collaborate with Prescribing Provider (Communicate findings)")
-        c6 = st.checkbox("6. Document Follow-Up Activities in Epic Medical Record")
-        
-        progress = sum([c1, c2, c3, c4, c5, c6]) / 6.0
-        st.progress(progress, text=f"Culture Follow-Up Completion: {int(progress*100)}%")
+    # 3. Dynamically generate the UI grouped by 'Clinical_Role'
+    roles = daily_tasks['Clinical_Role'].dropna().unique()
+    
+    for role in roles:
+        role_tasks = daily_tasks[daily_tasks['Clinical_Role'] == role]
         
         st.write("---")
-        st.markdown("### 📚 Core ASHP Goals for Today")
-        # Pulling specific core knowledge activities from the Master Evaluation sheet
-        st.info("**R1.1.4:** Analyze and assess information on which to base safe and effective medication therapy.\n\n*Activity Focus:* Select the best medication for all emergent clinical scenarios. Differentiate hemodynamic responses.")
-        st.checkbox("Log cognitive application in Pharmacademic for today's shift")
-
+        st.markdown(f"### 📋 {role}")
+        
+        for idx, task_row in role_tasks.iterrows():
+            activity_text = task_row['Actionable_Activity']
+            
+            # Extract just the code (e.g., "R1.1.6") from the full Sub-Objective string
+            full_sub_obj = str(task_row['ASHP_Sub_Objective'])
+            objective_code = full_sub_obj.split(' ')[0] if pd.notna(full_sub_obj) else "Goal"
+            
+            # Combine Domain and Verb for the UI target (e.g., "Applying - Carry Out")
+            target_level = str(task_row['Action_Verb'])
+            
+            checkbox_key = f"{resident_name}_{rotation_subject}_{role}_{idx}"
+            
+            # Render the UI
+            st.checkbox(
+                f"**[{objective_code}]** {activity_text} *(Target: {target_level})*", 
+                key=checkbox_key
+            )
 def render_assignments(resident_name):
     """Pulls from 5_Assignments_EM and provides submission links."""
     st.subheader("📝 Pending Assignments & Tasks")
