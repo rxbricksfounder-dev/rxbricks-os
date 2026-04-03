@@ -3,14 +3,13 @@ import datetime
 import streamlit as st
 import pandas as pd
 import streamlit_authenticator as stauth
-import urllib.parse
 import bcrypt
 import streamlit.components.v1 as components
 
 # 1. SETTINGS & CONFIG
 st.set_page_config(page_title="RxBricks: EM Trust Verification", layout="wide", page_icon="🧱")
 
-# 🚨 RE-PASTE YOUR LINKS HERE
+# Google Sheets Links
 sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=0&single=true&output=csv"
 responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1012642150&single=true&output=csv"
 users_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1844700463&single=true&output=csv"
@@ -27,10 +26,8 @@ def load_all_data():
         return curr, resp, sched, user_db
     except Exception as e:
         st.error(f"⚠️ Link Verification Error: {e}")
-        st.info("Check that your Google Sheet 'Publish to Web' settings are set to 'CSV' for each individual tab.")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-# 3. DATA INITIALIZATION
 curriculum_df, eval_df, schedule_df, users_df = load_all_data()
 
 # 4. AUTHENTICATION SETUP
@@ -40,26 +37,20 @@ if not users_df.empty:
         uname = str(row['Username']).strip()
         raw_pw = str(row['Password']).strip()
         hpw = bcrypt.hashpw(raw_pw.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        
         role = str(row['Role']).strip().upper()
         if role == "RPD": r_internal = "admin"
         elif role == "RESIDENT": r_internal = "learner"
         else: r_internal = "preceptor"
-
         u_tier = str(row['Tier']).strip().capitalize() if 'Tier' in users_df.columns else "Basic"
         
         credentials["usernames"][uname] = {
-            "email": str(row['Email']),
-            "name": str(row['Name']),
-            "password": hpw,
-            "role": r_internal,
-            "tier": u_tier
+            "email": str(row['Email']), "name": str(row['Name']),
+            "password": hpw, "role": r_internal, "tier": u_tier
         }
 
 authenticator = stauth.Authenticate(credentials, "rxbricks_em", "auth_key", cookie_expiry_days=30)
-
-# 5. LOGIN INTERFACE
 authenticator.login(location="main")
+
 name = st.session_state.get("name")
 authentication_status = st.session_state.get("authentication_status")
 username = st.session_state.get("username")
@@ -73,7 +64,6 @@ elif authentication_status is None:
 
 user_role = credentials["usernames"][username]["role"]
 user_tier = credentials["usernames"][username]["tier"]
-
 authenticator.logout(location="sidebar")
 st.sidebar.success(f"Logged in: {name} | Tier: {user_tier}")
 
@@ -296,16 +286,69 @@ def render_evaluation_tool():
             st.error(f"Error connecting to database: {e}")
 
 # =========================================================
+# NEW: DAILY ACTIVITIES & CLINICAL POLICIES MODULE
+# =========================================================
+def get_todays_schedule(target_name=None):
+    """Filters the schedule_df for today's date."""
+    if schedule_df.empty: return pd.DataFrame()
+    today_str = datetime.date.today().strftime("%Y-%m-%d")
+    
+    # Assuming 'Date' or 'Start Date' is the column name in schedule_df
+    date_col = 'Start Date' if 'Start Date' in schedule_df.columns else 'Date'
+    
+    # Filter for today
+    today_sched = schedule_df[schedule_df[date_col] == today_str]
+    
+    if target_name:
+        today_sched = today_sched[today_sched['Resident Name'] == target_name]
+    return today_sched
+
+def render_daily_operations(resident_name):
+    """Generates the daily checklist based on rotation assignment."""
+    st.subheader("🎯 Today's Clinical Policies & Activities")
+    
+    today_sched = get_todays_schedule(resident_name)
+    
+    if today_sched.empty:
+        st.info("You have no specific clinical rotations scheduled for today. Use this time for project work or curriculum review.")
+        return
+
+    rotation_subject = today_sched.iloc[0]['Subject']
+    st.markdown(f"**Assigned Rotation:** `{rotation_subject}`")
+    
+    # Mock routing based on rotation name (You can expand this mapping)
+    if "EM" in str(rotation_subject).upper() or "CLINICAL" in str(rotation_subject).upper():
+        st.write("---")
+        st.markdown("### 🧫 Discharge Culture Follow-Up Protocol")
+        st.caption("Reference: CTMFH-PGY2-EM - CLINICAL POLICY - 10")
+        
+        # Pulling specific tasks from the provided Clinical Policy 10
+        c1 = st.checkbox("1. Identify Discharged Patients with Pending Cultures (Review EMR)")
+        c2 = st.checkbox("2. Review Culture Results & Susceptibility Testing")
+        c3 = st.checkbox("3. Assess Appropriateness of Initial Empiric Therapy")
+        c4 = st.checkbox("4. Identify Potential Discrepancies & Need for Therapy Adjustment")
+        c5 = st.checkbox("5. Collaborate with Prescribing Provider (Communicate findings)")
+        c6 = st.checkbox("6. Document Follow-Up Activities in Epic Medical Record")
+        
+        progress = sum([c1, c2, c3, c4, c5, c6]) / 6.0
+        st.progress(progress, text=f"Culture Follow-Up Completion: {int(progress*100)}%")
+        
+        st.write("---")
+        st.markdown("### 📚 Core ASHP Goals for Today")
+        # Pulling specific core knowledge activities from the Master Evaluation sheet
+        st.info("**R1.1.4:** Analyze and assess information on which to base safe and effective medication therapy.\n\n*Activity Focus:* Select the best medication for all emergent clinical scenarios. Differentiate hemodynamic responses.")
+        st.checkbox("Log cognitive application in Pharmacademic for today's shift")
+
+# =========================================================
 # DASHBOARDS
 # =========================================================
 
 # --- ADMIN VIEW (RPD) ---
 if user_role == "admin":
     st.title("📈 Program Director Dashboard")
+    tab1, tab2, tab3 = st.tabs(["📊 Reports & Progress", "👨‍🏫 Submit Evaluation", "📅 Daily Operations Oversight"])
     
-    tab1, tab2, tab3 = st.tabs(["📊 Reports & Progress", "👨‍🏫 Submit Evaluation", "📚 Curriculum Library"])
-    
-    with tab1:
+     with tab1:
         st.subheader("Resident Assignment Tracking")
         if eval_df.empty:
             st.info("No evaluation data found.")
@@ -336,17 +379,34 @@ if user_role == "admin":
     with tab2:
         render_evaluation_tool()
         
-    with tab3:
-        render_curriculum(user_role, user_tier)
+    with tab3: # NEW RPD OVERSIGHT TAB
+        st.subheader("Today's Active Residents")
+        today_all_sched = get_todays_schedule()
+        if not today_all_sched.empty:
+            st.dataframe(today_all_sched[['Resident Name', 'Subject', 'Start Time']], use_container_width=True)
+            st.write("### Operational Metric Tracking")
+            st.info("Metrics for clinical policy completions (e.g., Discharge Culture Follow-ups) will populate here as residents check off their daily steps.")
+        else:
+            st.warning("No scheduled activities found for today.")
 
 # --- PRECEPTOR VIEW ---
 elif user_role == "preceptor":
     st.title("👨‍🏫 Preceptor Dashboard")
     
+    # NEW PRECEPTOR WIDGET: Daily Visual Schedule
+    st.info(f"📅 **Today's Date:** {datetime.date.today().strftime('%B %d, %Y')}")
+    today_sched = get_todays_schedule()
+    if not today_sched.empty:
+        st.markdown("### 👥 Resident Schedule Today")
+        st.table(today_sched[['Resident Name', 'Subject', 'Start Time']])
+    else:
+        st.caption("No residents are scheduled for clinical shifts today.")
+    st.write("---")
+
     tab1, tab2, tab3 = st.tabs(["👨‍🏫 Evaluate Resident", "📈 Resident Status", "📚 Curriculum Library"])
-    
+   
     with tab1:
-        render_evaluation_tool()
+            render_evaluation_tool()
         
     with tab2:
         st.subheader("Resident Progress Status")
@@ -376,14 +436,15 @@ elif user_role == "preceptor":
 # --- RESIDENT/LEARNER VIEW ---
 elif user_role == "learner":
     st.title(f"Welcome, {name}!")
-    
+
     render_step_tracker(name)
+    # render_step_tracker(name) # Your existing tracker
     st.write("---")
     
-    tab1, tab2, tab3 = st.tabs(["📚 Curriculum & Resources", "📅 My Progress & Schedule", "💡 Encouragement"])
+    tab1, tab2, tab3 = st.tabs(["🎯 Today's Plan", "📚 Curriculum", "📅 My Progress"])
     
-    with tab1:
-        render_curriculum(user_role, user_tier)
+    with tab1: # NEW RESIDENT TAB FOR DAILY OPERATIONS
+        render_daily_operations(name)
         
     with tab2:
         st.subheader("📅 Upcoming Shifts")
