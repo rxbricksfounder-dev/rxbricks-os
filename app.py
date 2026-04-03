@@ -268,7 +268,7 @@ elif user_role == "preceptor":
         render_step_tracker(target_res)
         st.write("---")
         
-        st.subheader("Step 1: Generate Pharmacademic Narrative")
+        st.subheader("Evaluation Details")
         cats = curriculum_df['Category / Module'].unique()
         sel_cat = st.selectbox("Module", cats)
         topics = curriculum_df[curriculum_df['Category / Module'] == sel_cat]['Topic'].unique()
@@ -278,10 +278,10 @@ elif user_role == "preceptor":
         st.info(f"**ASHP Objective:** {activity_row['ASHP Objective']}\n\n**Sub-Objective:** {activity_row['ASHP Sub-Objective']}")
         
         zone = st.radio("Entrustment Zone:", [
-            "Zone 1: Direct Supervision (Preceptor present for all steps)", 
-            "Zone 2: Proactive Supervision (Preceptor available, reviews all plans)", 
-            "Zone 3: Reactive Supervision (Preceptor available on demand)", 
-            "Zone 4: Independent (Resident practices independently)"
+            "Zone 1: Direct Supervision", 
+            "Zone 2: Proactive Supervision", 
+            "Zone 3: Reactive Supervision", 
+            "Zone 4: Independent"
         ])
         
         # --- AUTOGENERATE PHARMACADEMIC NARRATIVE LOGIC ---
@@ -311,29 +311,39 @@ elif user_role == "preceptor":
             f"Targeted Next Steps: {next_steps}"
         )
 
-        final_narrative = st.text_area("Review and edit your evaluation text before copying:", value=auto_narrative, height=200)
+        st.write("---")
+        st.subheader("📝 Pharmacademic Narrative")
+        final_narrative = st.text_area("Review and edit your evaluation text. (Copy this for Pharmacademic):", value=auto_narrative, height=200)
         
-        st.write("**📋 Action:** Click the copy icon in the top right corner of the box below to copy your text.")
-        st.code(final_narrative, language="markdown")
-        
-        st.divider()
-        
-        # --- THE EMBEDDED GOOGLE FORM ---
-        st.subheader("Step 2: Submit Official Evaluation")
-        st.markdown("Paste your copied narrative into the form below and click submit to permanently log the evaluation to the master database.")
-        
-        # If they haven't put a link in yet, show a warning. Otherwise, embed the form.
-        if "YOUR_FORM_ID_HERE" in evaluation_form_url:
-            st.error("⚠️ Setup Required: Please paste your Google Form URL into the `evaluation_form_url` variable at the top of your app.py file.")
-        else:
-            components.html(f'''
-                <iframe src="{evaluation_form_url}" 
-                        width="100%" 
-                        height="800" 
-                        frameborder="0" 
-                        marginheight="0" 
-                        marginwidth="0">Loading…</iframe>
-            ''', height=800)
+        # --- AUTO-EXPORT TO GOOGLE SHEET VIA FORM POST ---
+        if st.button("🚀 Submit to Master Database", type="primary"):
+            
+            # 1. Put your form ID here (from your form URL)
+            form_id = "1FAIpQLSe8arpBwEQi2pzFEb7qKC9oag8SN11HEU-_gGN0vQkEWqvlYA" 
+            post_url = f"https://docs.google.com/forms/d/e/1FAIpQLSe8arpBwEQi2pzFEb7qKC9oag8SN11HEU-_gGN0vQkEWqvlYA/viewform?usp=pp_url"
+            
+            # 2. Replace these 'entry.XXXXXX' keys with the exact numbers from your pre-filled link
+            # Add or remove entry keys depending on exactly how many questions are on your form!
+            form_data = {
+                "entry.1175930505": target_res,        # Example: Resident Name question
+                "entry.137559973": date
+                "entry.597824849": sel_topic,         # Example: Activity/Topic question
+                "entry.575285059": ashp,              # Example: Zone question
+                "entry.930508246": blooms,   # Example: The narrative text box
+                "entry.411526759": zone
+            }
+            
+            try:
+                # Send the data silently in the background
+                response = requests.post(post_url, data=form_data)
+                
+                if response.status_code == 200:
+                    st.success(f"✅ Success! Evaluation for {target_res} securely logged to the Master Database.")
+                    st.balloons()
+                else:
+                    st.error("⚠️ Submission failed. Please check your Form ID and Entry IDs.")
+            except Exception as e:
+                st.error(f"Error connecting to database: {e}")
             
     st.divider()
     render_curriculum(user_role, user_tier)
