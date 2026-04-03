@@ -34,7 +34,7 @@ def load_all_data():
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 # Update the unpacking line to include assignments_df
-curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df = load__data()
+curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df = load_all_data()
 
 # 4. AUTHENTICATION SETUP
 credentials = {"usernames": {}}
