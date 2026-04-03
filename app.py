@@ -348,33 +348,33 @@ if user_role == "admin":
     st.title("📈 Program Director Dashboard")
     tab1, tab2, tab3 = st.tabs(["📊 Reports & Progress", "👨‍🏫 Submit Evaluation", "📅 Daily Operations Oversight"])
     
- with tab1:
-    st.subheader("Resident Assignment Tracking")
-    if eval_df.empty:
-        st.info("No evaluation data found.")
-    else:
-        res_list = eval_df['Resident Name'].dropna().unique().tolist()
-        if res_list:
-            sel_res = st.selectbox("Review Resident Progress:", res_list, key="admin_report_res")
-            render_step_tracker(sel_res)
-            st.write("---")
-            
-            res_data = eval_df[eval_df['Resident Name'] == sel_res]
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Total Completed Evaluations", len(res_data))
-            with col2:
-                csv_export = res_data.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Export Resident Data (CSV)",
-                    data=csv_export,
-                    file_name=f"{sel_res}_eval_report.csv",
-                    mime='text/csv',
-                    type="primary"
-                )
-            
-            st.dataframe(res_data, use_container_width=True)
+    with tab1:
+        st.subheader("Resident Assignment Tracking")
+        if eval_df.empty:
+            st.info("No evaluation data found.")
+        else:
+            res_list = eval_df['Resident Name'].dropna().unique().tolist()
+            if res_list:
+                sel_res = st.selectbox("Review Resident Progress:", res_list, key="admin_report_res")
+                render_step_tracker(sel_res)
+                st.write("---")
+                
+                res_data = eval_df[eval_df['Resident Name'] == sel_res]
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Total Completed Evaluations", len(res_data))
+                with col2:
+                    csv_export = res_data.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Export Resident Data (CSV)",
+                        data=csv_export,
+                        file_name=f"{sel_res}_eval_report.csv",
+                        mime='text/csv',
+                        type="primary"
+                    )
+                
+                st.dataframe(res_data, use_container_width=True)
                 
     with tab2:
         render_evaluation_tool()
@@ -388,7 +388,6 @@ if user_role == "admin":
             st.info("Metrics for clinical policy completions (e.g., Discharge Culture Follow-ups) will populate here as residents check off their daily steps.")
         else:
             st.warning("No scheduled activities found for today.")
-
 # --- PRECEPTOR VIEW ---
 elif user_role == "preceptor":
     st.title("👨‍🏫 Preceptor Dashboard")
