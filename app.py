@@ -12,9 +12,10 @@ st.set_page_config(page_title="RxBricks: EM Trust Verification", layout="wide", 
 
 # 🚨 RE-PASTE YOUR LINKS HERE
 sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=0&single=true&output=csv"
-responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=676004133&single=true&output=csv"
+responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1012642150&single=true&output=csv"
 users_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1844700463&single=true&output=csv"
 schedule_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1966612732&single=true&output=csv"
+evaluation_form_url = "https://docs.google.com/forms/d/e/1FAIpQLSe8arpBwEQi2pzFEb7qKC9oag8SN11HEU-_gGN0vQkEWqvlYA/viewform??embedded=true"
 
 @st.cache_data(ttl=60)
 def load_all_data():
@@ -261,12 +262,13 @@ elif user_role == "preceptor":
     
     res_names = users_df[users_df['Role'].str.upper() == 'RESIDENT']['Name'].tolist()
     if res_names:
-        target_res = st.selectbox("Select Resident", res_names)
+        target_res = st.selectbox("Select Resident to Evaluate", res_names)
         
         # --- INJECT STEP TRACKER ---
         render_step_tracker(target_res)
         st.write("---")
         
+        st.subheader("Step 1: Generate Pharmacademic Narrative")
         cats = curriculum_df['Category / Module'].unique()
         sel_cat = st.selectbox("Module", cats)
         topics = curriculum_df[curriculum_df['Category / Module'] == sel_cat]['Topic'].unique()
@@ -309,16 +311,29 @@ elif user_role == "preceptor":
             f"Targeted Next Steps: {next_steps}"
         )
 
+        final_narrative = st.text_area("Review and edit your evaluation text before copying:", value=auto_narrative, height=200)
+        
+        st.write("**📋 Action:** Click the copy icon in the top right corner of the box below to copy your text.")
+        st.code(final_narrative, language="markdown")
+        
         st.divider()
-        st.subheader("📝 Pharmacademic Narrative")
-        st.markdown("This narrative was **auto-generated** based on the selected entrustment zone and ASHP curriculum taxonomy. You may edit the text below before copying.")
         
-        final_narrative = st.text_area("Final Evaluation Text (Editable):", value=auto_narrative, height=250)
+        # --- THE EMBEDDED GOOGLE FORM ---
+        st.subheader("Step 2: Submit Official Evaluation")
+        st.markdown("Paste your copied narrative into the form below and click submit to permanently log the evaluation to the master database.")
         
-        if st.button("Log Evaluation internally", type="primary"):
-            st.success(f"Evaluation for {target_res} logged internally.")
-            st.write("**📋 Ready for Pharmacademic:** Click the copy icon in the top right corner of the box below to transpose.")
-            st.code(final_narrative, language="markdown")
+        # If they haven't put a link in yet, show a warning. Otherwise, embed the form.
+        if "YOUR_FORM_ID_HERE" in evaluation_form_url:
+            st.error("⚠️ Setup Required: Please paste your Google Form URL into the `evaluation_form_url` variable at the top of your app.py file.")
+        else:
+            components.html(f'''
+                <iframe src="{evaluation_form_url}" 
+                        width="100%" 
+                        height="800" 
+                        frameborder="0" 
+                        marginheight="0" 
+                        marginwidth="0">Loading…</iframe>
+            ''', height=800)
             
     st.divider()
     render_curriculum(user_role, user_tier)
