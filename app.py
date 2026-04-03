@@ -218,71 +218,170 @@ def render_step_tracker(resident_name):
     st.progress(progress_pct)
 
 # =========================================================
+# REUSABLE COMPONENT: EVALUATION TOOL
+# =========================================================
+def render_evaluation_tool():
+    res_names = users_df[users_df['Role'].str.upper() == 'RESIDENT']['Name'].tolist()
+    if not res_names:
+        st.warning("No residents found in the system.")
+        return
+
+    # Added a unique key here so Streamlit doesn't get confused by multiple selectboxes
+    target_res = st.selectbox("Select Resident to Evaluate", res_names, key="eval_tool_res")
+    
+    render_step_tracker(target_res)
+    st.write("---")
+    
+    st.subheader("Evaluation Details")
+    cats = curriculum_df['Category / Module'].unique()
+    sel_cat = st.selectbox("Module", cats, key="eval_tool_cat")
+    topics = curriculum_df[curriculum_df['Category / Module'] == sel_cat]['Topic'].unique()
+    sel_topic = st.selectbox("Activity", topics, key="eval_tool_topic")
+    
+    activity_row = curriculum_df[curriculum_df['Topic'] == sel_topic].iloc[0]
+    st.info(f"**ASHP Objective:** {activity_row['ASHP Objective']}\n\n**Sub-Objective:** {activity_row['ASHP Sub-Objective']}")
+    
+    zone = st.radio("Entrustment Zone:", [
+        "Zone 1: Direct Supervision", 
+        "Zone 2: Proactive Supervision", 
+        "Zone 3: Reactive Supervision", 
+        "Zone 4: Independent"
+    ], key="eval_tool_zone")
+    
+    # --- AUTOGENERATE NARRATIVE ---
+    obj_text = str(activity_row['ASHP Objective']).lower()
+    sub_obj_text = str(activity_row['ASHP Sub-Objective']).replace('"', '').strip()
+    action_verb = str(activity_row.get('Action Verb', 'evaluate')).lower()
+    cog_domain = str(activity_row.get('Cognitive Domain', 'application')).lower()
+    
+    if "Zone 1" in zone:
+        zone_narrative = "required direct and continuous supervision"
+        next_steps = "Future encounters should focus on moving toward proactive supervision by having the resident formulate and propose plans prior to execution."
+    elif "Zone 2" in zone:
+        zone_narrative = "required proactive supervision and routine preceptor review prior to acting"
+        next_steps = "Future encounters should encourage the resident to execute plans with reactive preceptor availability, building clinical confidence."
+    elif "Zone 3" in zone:
+        zone_narrative = "performed with reactive supervision, appropriately seeking guidance when clinically necessary"
+        next_steps = "The resident is progressing excellently; next steps involve pushing for full independence on routine cases within this topic."
+    else:
+        zone_narrative = "performed completely independently, serving as a reliable and competent practitioner"
+        next_steps = "The resident has achieved mastery in this area and should continue independent practice and peer mentoring."
+
+    auto_narrative = (
+        f"Resident {target_res} was evaluated on the clinical topic of {sel_topic}. "
+        f"During this encounter, the resident {zone_narrative} in order to {sub_obj_text}.\n\n"
+        f"Operating within the cognitive domain of {cog_domain}, the resident demonstrated the ability to {action_verb} "
+        f"as it relates to the broader program goal to {obj_text}.\n\n"
+        f"Targeted Next Steps: {next_steps}"
+    )
+
+    st.write("---")
+    st.subheader("📝 Pharmacademic Narrative")
+    final_narrative = st.text_area("Review and edit your evaluation text. (Copy this for Pharmacademic):", value=auto_narrative, height=200, key="eval_tool_narrative")
+    
+    if st.button("🚀 Submit to Master Database", type="primary", key="eval_tool_submit"):
+        current_date = datetime.date.today().strftime("%Y-%m-%d")
+        post_url = "https://docs.google.com/forms/d/e/1FAIpQLSe8arpBwEQi2pzFEb7qKC9oag8SN11HEU-_gGN0vQkEWqvlYA/formResponse"
+        
+        form_data = {
+            "entry.1175930505": target_res,                            
+            "entry.137559973": current_date,                           
+            "entry.597824849": sel_topic,                              
+            "entry.575285059": activity_row['ASHP Objective'],         
+            "entry.930508246": activity_row['Cognitive Domain'],       
+            "entry.411526759": zone                                    
+        }
+        
+        try:
+            response = requests.post(post_url, data=form_data)
+            if response.status_code == 200:
+                st.success(f"✅ Success! Evaluation for {target_res} securely logged to the Master Database.")
+                st.balloons()
+            else:
+                st.error(f"⚠️ Submission failed with status code: {response.status_code}.")
+        except Exception as e:
+            st.error(f"Error connecting to database: {e}")
+
+# =========================================================
 # DASHBOARDS
 # =========================================================
 
-# --- ADMIN VIEW ---
+# --- ADMIN VIEW (RPD) ---
 if user_role == "admin":
     st.title("📈 Program Director Dashboard")
-    if eval_df.empty:
-        st.info("No evaluation data found.")
-    else:
-        res_list = eval_df['Resident Name'].dropna().unique().tolist()
-        if res_list:
-            sel_res = st.selectbox("Review Resident Progress:", res_list)
-            
-            # --- INJECT STEP TRACKER ---
-            render_step_tracker(sel_res)
-            st.write("---")
-            
-            res_data = eval_df[eval_df['Resident Name'] == sel_res]
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Total Completed Evaluations", len(res_data))
-            with col2:
-                # Convert dataframe to CSV for download
-                csv_export = res_data.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Export Resident Data (CSV)",
-                    data=csv_export,
-                    file_name=f"{sel_res}_eval_report.csv",
-                    mime='text/csv',
-                    type="primary"
-                )
-                
-            st.dataframe(res_data, use_container_width=True)
     
-    st.divider()
-    render_curriculum(user_role, user_tier)
+    # The RPD gets three distinct tabs
+    tab1, tab2, tab3 = st.tabs(["📊 Reports & Progress", "👨‍🏫 Submit Evaluation", "📚 Curriculum Library"])
+    
+    with tab1:
+        st.subheader("Resident Assignment Tracking")
+        if eval_df.empty:
+            st.info("No evaluation data found.")
+        else:
+            res_list = eval_df['Resident Name'].dropna().unique().tolist()
+            if res_list:
+                sel_res = st.selectbox("Review Resident Progress:", res_list, key="admin_report_res")
+                render_step_tracker(sel_res)
+                st.write("---")
+                
+                res_data = eval_df[eval_df['Resident Name'] == sel_res]
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Total Completed Evaluations", len(res_data))
+                with col2:
+                    csv_export = res_data.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Export Resident Data (CSV)",
+                        data=csv_export,
+                        file_name=f"{sel_res}_eval_report.csv",
+                        mime='text/csv',
+                        type="primary"
+                    )
+                
+                # Show the data clearly    
+                st.dataframe(res_data, use_container_width=True)
+                
+    with tab2:
+        # RPD can now submit evaluations just like a preceptor
+        render_evaluation_tool()
+        
+    with tab3:
+        # The curriculum is neatly tucked away here
+        render_curriculum(user_role, user_tier)
 
 # --- PRECEPTOR VIEW ---
 elif user_role == "preceptor":
-    st.title("👨‍🏫 Bedside Trust Verification")
+    st.title("👨‍🏫 Preceptor Dashboard")
     
-    res_names = users_df[users_df['Role'].str.upper() == 'RESIDENT']['Name'].tolist()
-    if res_names:
-        target_res = st.selectbox("Select Resident to Evaluate", res_names)
+    # The Preceptor gets three distinct tabs
+    tab1, tab2, tab3 = st.tabs(["👨‍🏫 Evaluate Resident", "📈 Resident Status", "📚 Curriculum Library"])
+    
+    with tab1:
+        # This calls the reusable form we just built
+        render_evaluation_tool()
         
-        # --- INJECT STEP TRACKER ---
-        render_step_tracker(target_res)
-        st.write("---")
-        
-        st.subheader("Evaluation Details")
-        cats = curriculum_df['Category / Module'].unique()
-        sel_cat = st.selectbox("Module", cats)
-        topics = curriculum_df[curriculum_df['Category / Module'] == sel_cat]['Topic'].unique()
-        sel_topic = st.selectbox("Activity", topics)
-        
-        activity_row = curriculum_df[curriculum_df['Topic'] == sel_topic].iloc[0]
-        st.info(f"**ASHP Objective:** {activity_row['ASHP Objective']}\n\n**Sub-Objective:** {activity_row['ASHP Sub-Objective']}")
-        
-        zone = st.radio("Entrustment Zone:", [
-            "Zone 1: Direct Supervision", 
-            "Zone 2: Proactive Supervision", 
-            "Zone 3: Reactive Supervision", 
-            "Zone 4: Independent"
-        ])
+    with tab2:
+        st.subheader("Resident Progress Status")
+        res_names = users_df[users_df['Role'].str.upper() == 'RESIDENT']['Name'].tolist()
+        if res_names:
+            stat_res = st.selectbox("Check Status for:", res_names, key="prec_stat_res")
+            render_step_tracker(stat_res)
+            
+            st.write("**Recent Evaluations (Last 10):**")
+            if not eval_df.empty:
+                res_evals = eval_df[eval_df['Resident Name'] == stat_res]
+                if not res_evals.empty:
+                    # Show recent evals so the preceptor knows what the resident has already done
+                    st.dataframe(res_evals.tail(10), use_container_width=True)
+                else:
+                    st.info("No evaluations logged for this resident yet.")
+            else:
+                st.info("No evaluation data found in the system.")
+                
+    with tab3:
+        # The curriculum is neatly tucked away here
+        render_curriculum(user_role, user_tier)
         
         # --- AUTOGENERATE PHARMACADEMIC NARRATIVE LOGIC ---
         obj_text = str(activity_row['ASHP Objective']).lower()
