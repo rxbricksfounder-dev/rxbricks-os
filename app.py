@@ -112,9 +112,12 @@ def render_curriculum(current_role, current_tier):
     
     st.caption(f"EPA: {epa_text} | Target (Bloom's): {bloom_text} | Competence (Miller's): {miller_text}")
     st.markdown(f"**Objective:** {first_item.get('ASHP Objective', 'N/A')}")
-# Convert all types to strings, replacing empty (NaN) values with "Unnamed Resource"
-    available_types = [str(res) if pd.notna(res) else "Unnamed Resource" for res in topic_items['Resource Type'].tolist()]
-    available_types = topic_items['Resource Type'].tolist()
+
+    # NEW FIX: Convert everything to strings and handle blanks
+    available_types = [
+        str(res).strip() if pd.notna(res) and str(res).strip() != "" else f"Resource {i+1}" 
+        for i, res in enumerate(topic_items['Resource Type'].tolist())
+    ]
     
     if not available_types:
         st.warning("No resources attached to this topic.")
