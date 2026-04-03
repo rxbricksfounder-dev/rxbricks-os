@@ -12,10 +12,9 @@ st.set_page_config(page_title="RxBricks: EM Trust Verification", layout="wide", 
 
 # 🚨 RE-PASTE YOUR LINKS HERE
 sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=0&single=true&output=csv"
-responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1012642150&single=true&output=csv"
+responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=676004133&single=true&output=csv"
 users_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1844700463&single=true&output=csv"
 schedule_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1966612732&single=true&output=csv"
-evaluation_form_url = "https://docs.google.com/forms/d/e/1FAIpQLSe8arpBwEQi2pzFEb7qKC9oag8SN11HEU-_gGN0vQkEWqvlYA/viewform??embedded=true"
 
 @st.cache_data(ttl=60)
 def load_all_data():
@@ -30,17 +29,6 @@ def load_all_data():
         st.error(f"⚠️ Link Verification Error: {e}")
         st.info("Check that your Google Sheet 'Publish to Web' settings are set to 'CSV' for each individual tab.")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-
-def generate_gcal_link(title, date_str, start_time="08:00:00", end_time="17:00:00", details=""):
-    try:
-        start_dt = pd.to_datetime(f"{date_str} {start_time}")
-        end_dt = pd.to_datetime(f"{date_str} {end_time}")
-        start_f = start_dt.strftime('%Y%m%dT%H%M%S')
-        end_f = end_dt.strftime('%Y%m%dT%H%M%S')
-        params = {"action": "TEMPLATE", "text": title, "dates": f"{start_f}/{end_f}", "details": details}
-        return "https://calendar.google.com/calendar/render?" + urllib.parse.urlencode(params)
-    except:
-        return "https://calendar.google.com"
 
 # 3. DATA INITIALIZATION
 curriculum_df, eval_df, schedule_df, users_df = load_all_data()
@@ -58,7 +46,6 @@ if not users_df.empty:
         elif role == "RESIDENT": r_internal = "learner"
         else: r_internal = "preceptor"
 
-        # Safely grab the user's tier, default to Basic if the column doesn't exist yet
         u_tier = str(row['Tier']).strip().capitalize() if 'Tier' in users_df.columns else "Basic"
         
         credentials["usernames"][uname] = {
@@ -66,7 +53,7 @@ if not users_df.empty:
             "name": str(row['Name']),
             "password": hpw,
             "role": r_internal,
-            "tier": u_tier # Store the tier in the active session
+            "tier": u_tier
         }
 
 authenticator = stauth.Authenticate(credentials, "rxbricks_em", "auth_key", cookie_expiry_days=30)
@@ -84,7 +71,6 @@ elif authentication_status is None:
     st.warning("Please log in to access RxBricks EM")
     st.stop()
 
-# Grab both role and tier for the logged-in user
 user_role = credentials["usernames"][username]["role"]
 user_tier = credentials["usernames"][username]["tier"]
 
@@ -109,20 +95,19 @@ def render_curriculum(current_role, current_tier):
     topic_items = module_items[module_items['Topic'] == selected_item_name]
     first_item = topic_items.iloc[0]
 
-    # --- NEW: INTERACTIVE CHECKLIST PROTOTYPE ---
     col1, col2 = st.columns([3, 1])
     with col1:
         st.subheader(f"📖 {first_item['Topic']}")
     with col2:
-        # Using session state to track completion temporarily
         check_key = f"complete_{username}_{first_item['Topic']}"
         is_complete = st.toggle("✅ Mark as Complete", key=check_key)
 
     if is_complete:
         st.success(f"Awesome job! '{first_item['Topic']}' marked as complete.")
 
-    st.caption(f"EPA: {first_item['EPA']} | Target: {first_item['Cognitive Domain']}")
-    st.markdown(f"**Objective:** {first_item['ASHP Objective']}")
+    # Using .get() for safety in case columns are missing
+    st.caption(f"EPA: {first_item.get('EPA', 'N/A')} | Target: {first_item.get('Cognitive Domain', 'N/A')}")
+    st.markdown(f"**Objective:** {first_item.get('ASHP Objective', 'N/A')}")
 
     available_types = topic_items['Resource Type'].tolist()
     
@@ -143,52 +128,31 @@ def render_curriculum(current_role, current_tier):
                 st.info(f"No link provided for {res_type}.")
                 continue
 
-            # --- PAYWALL LOGIC ---
             is_premium = "youtube.com" in res_url.lower() or "youtu.be" in res_url.lower() or "notebooklm" in res_url.lower()
             has_access = True
             
-            # If it's a premium resource, check if the user is a learner on the Basic tier
             if is_premium and current_role == "learner" and current_tier not in ["Pro", "Premium"]:
                 has_access = False
                 
             if not has_access:
                 st.warning("⭐️ **Premium Feature**")
                 st.write("Video lectures, audio podcasts, and AI NotebookLM integrations are reserved for Pro subscribers.")
-                # You can add a link to a Stripe checkout or Google Form here later
                 st.button("Upgrade to Pro", key=f"upgrade_{idx}_{first_item['Topic']}", type="primary")
-                continue # Skips the rest of the code for this tab, effectively hiding the resource
+                continue 
 
-            # --- RESOURCE RENDERING LOGIC ---
-            
-            # 1. YOUTUBE HANDLER 
             if "youtube.com" in res_url.lower() or "youtu.be" in res_url.lower():
                 st.video(res_url)
-                
-            # 2. NOTEBOOKLM HANDLER (Cannot be embedded securely, must open in new tab)
             elif "notebooklm" in res_url.lower():
                 st.info("💡 **Interactive AI Notebook**\n\nGoogle NotebookLM requires a secure browser session. Click below to open your AI study guide.")
                 st.link_button(f"Open NotebookLM", res_url, type="primary")
-
-            # 3. GOOGLE SLIDES HANDLER 
             elif "docs.google.com/presentation" in res_url.lower():
                 embed_url = res_url.replace("/pub?", "/embed?").replace("/pub", "/embed")
-                iframe_html = f'''
-                    <iframe src="{embed_url}" width="100%" height="700" frameborder="0" allowfullscreen="true" mozallowfullscreen="true" webkitallowfullscreen="true"></iframe>
-                '''
-                components.html(iframe_html, height=700)
-
-            # 4. GOOGLE DOCS & FORMS HANDLER
+                components.html(f'<iframe src="{embed_url}" width="100%" height="700" frameborder="0" allowfullscreen="true" mozallowfullscreen="true" webkitallowfullscreen="true"></iframe>', height=700)
             elif "docs.google.com" in res_url.lower() or "forms.gle" in res_url.lower():
                 embed_url = res_url
                 if "embedded=true" not in embed_url and "forms.gle" not in embed_url:
                     embed_url += "&embedded=true" if "?" in embed_url else "?embedded=true"
-                
-                iframe_html = f'''
-                    <iframe src="{embed_url}" width="100%" height="700" frameborder="0" allowfullscreen="true" mozallowfullscreen="true" webkitallowfullscreen="true"></iframe>
-                '''
-                components.html(iframe_html, height=700)
-                
-            # 5. FALLBACK HANDLER
+                components.html(f'<iframe src="{embed_url}" width="100%" height="700" frameborder="0" allowfullscreen="true" mozallowfullscreen="true" webkitallowfullscreen="true"></iframe>', height=700)
             else:
                 st.link_button(f"Open {res_type} in New Tab", res_url)
 
@@ -204,13 +168,12 @@ def render_step_tracker(resident_name):
     total_topics = len(curriculum_df['Topic'].unique())
     res_evals = eval_df[eval_df['Resident Name'] == resident_name]
     
-    # Check which column the Google Form feeds into (usually 'Activity' or 'Topic')
     if 'Activity' in res_evals.columns:
         completed_topics = res_evals['Activity'].nunique()
     elif 'Topic' in res_evals.columns:
         completed_topics = res_evals['Topic'].nunique()
     else:
-        completed_topics = len(res_evals) # Fallback
+        completed_topics = len(res_evals) 
         
     progress_pct = min(completed_topics / total_topics, 1.0) if total_topics > 0 else 0.0
     
@@ -221,25 +184,43 @@ def render_step_tracker(resident_name):
 # REUSABLE COMPONENT: EVALUATION TOOL
 # =========================================================
 def render_evaluation_tool():
+    if curriculum_df.empty:
+        st.warning("Curriculum data is unavailable.")
+        return
+
     res_names = users_df[users_df['Role'].str.upper() == 'RESIDENT']['Name'].tolist()
     if not res_names:
         st.warning("No residents found in the system.")
         return
 
-    # Added a unique key here so Streamlit doesn't get confused by multiple selectboxes
     target_res = st.selectbox("Select Resident to Evaluate", res_names, key="eval_tool_res")
     
     render_step_tracker(target_res)
     st.write("---")
     
     st.subheader("Evaluation Details")
-    cats = curriculum_df['Category / Module'].unique()
+    cats = curriculum_df['Category / Module'].dropna().unique()
     sel_cat = st.selectbox("Module", cats, key="eval_tool_cat")
-    topics = curriculum_df[curriculum_df['Category / Module'] == sel_cat]['Topic'].unique()
+    
+    topics = curriculum_df[curriculum_df['Category / Module'] == sel_cat]['Topic'].dropna().unique()
+    if len(topics) == 0:
+        st.warning("No topics found for this module.")
+        return
+
     sel_topic = st.selectbox("Activity", topics, key="eval_tool_topic")
     
-    activity_row = curriculum_df[curriculum_df['Topic'] == sel_topic].iloc[0]
-    st.info(f"**ASHP Objective:** {activity_row['ASHP Objective']}\n\n**Sub-Objective:** {activity_row['ASHP Sub-Objective']}")
+    topic_data = curriculum_df[curriculum_df['Topic'] == sel_topic]
+    if topic_data.empty:
+        st.warning("Data missing for this activity.")
+        return
+
+    activity_row = topic_data.iloc[0]
+    
+    # Safely get variables using .get() to prevent KeyErrors
+    raw_obj = activity_row.get('ASHP Objective', 'Patient Care Objective')
+    raw_sub_obj = activity_row.get('ASHP Sub-Objective', 'Perform clinical duties')
+    
+    st.info(f"**ASHP Objective:** {raw_obj}\n\n**Sub-Objective:** {raw_sub_obj}")
     
     zone = st.radio("Entrustment Zone:", [
         "Zone 1: Direct Supervision", 
@@ -248,9 +229,9 @@ def render_evaluation_tool():
         "Zone 4: Independent"
     ], key="eval_tool_zone")
     
-    # --- AUTOGENERATE NARRATIVE ---
-    obj_text = str(activity_row['ASHP Objective']).lower()
-    sub_obj_text = str(activity_row['ASHP Sub-Objective']).replace('"', '').strip()
+    # Clean text for narrative
+    obj_text = str(raw_obj).lower()
+    sub_obj_text = str(raw_sub_obj).replace('"', '').strip()
     action_verb = str(activity_row.get('Action Verb', 'evaluate')).lower()
     cog_domain = str(activity_row.get('Cognitive Domain', 'application')).lower()
     
@@ -287,8 +268,8 @@ def render_evaluation_tool():
             "entry.1175930505": target_res,                            
             "entry.137559973": current_date,                           
             "entry.597824849": sel_topic,                              
-            "entry.575285059": activity_row['ASHP Objective'],         
-            "entry.930508246": activity_row['Cognitive Domain'],       
+            "entry.575285059": raw_obj,         
+            "entry.930508246": activity_row.get('Cognitive Domain', 'N/A'),       
             "entry.411526759": zone                                    
         }
         
@@ -310,7 +291,6 @@ def render_evaluation_tool():
 if user_role == "admin":
     st.title("📈 Program Director Dashboard")
     
-    # The RPD gets three distinct tabs
     tab1, tab2, tab3 = st.tabs(["📊 Reports & Progress", "👨‍🏫 Submit Evaluation", "📚 Curriculum Library"])
     
     with tab1:
@@ -339,26 +319,21 @@ if user_role == "admin":
                         type="primary"
                     )
                 
-                # Show the data clearly    
                 st.dataframe(res_data, use_container_width=True)
                 
     with tab2:
-        # RPD can now submit evaluations just like a preceptor
         render_evaluation_tool()
         
     with tab3:
-        # The curriculum is neatly tucked away here
         render_curriculum(user_role, user_tier)
 
 # --- PRECEPTOR VIEW ---
 elif user_role == "preceptor":
     st.title("👨‍🏫 Preceptor Dashboard")
     
-    # The Preceptor gets three distinct tabs
     tab1, tab2, tab3 = st.tabs(["👨‍🏫 Evaluate Resident", "📈 Resident Status", "📚 Curriculum Library"])
     
     with tab1:
-        # This calls the reusable form we just built
         render_evaluation_tool()
         
     with tab2:
@@ -372,88 +347,24 @@ elif user_role == "preceptor":
             if not eval_df.empty:
                 res_evals = eval_df[eval_df['Resident Name'] == stat_res]
                 if not res_evals.empty:
-                    # Show recent evals so the preceptor knows what the resident has already done
-                    st.dataframe(res_evals.tail(10), use_container_width=True)
+                    if 'Date' in res_evals.columns:
+                        res_evals['Date'] = pd.to_datetime(res_evals['Date'], errors='coerce')
+                        recent_10 = res_evals.sort_values(by='Date', ascending=False).head(10)
+                    else:
+                        recent_10 = res_evals.tail(10)
+                    st.dataframe(recent_10, use_container_width=True)
                 else:
                     st.info("No evaluations logged for this resident yet.")
             else:
                 st.info("No evaluation data found in the system.")
                 
     with tab3:
-        # The curriculum is neatly tucked away here
         render_curriculum(user_role, user_tier)
-        
-        # --- AUTOGENERATE PHARMACADEMIC NARRATIVE LOGIC ---
-        obj_text = str(activity_row['ASHP Objective']).lower()
-        sub_obj_text = str(activity_row['ASHP Sub-Objective']).replace('"', '').strip()
-        action_verb = str(activity_row.get('Action Verb', 'evaluate')).lower()
-        cog_domain = str(activity_row.get('Cognitive Domain', 'application')).lower()
-        
-        if "Zone 1" in zone:
-            zone_narrative = "required direct and continuous supervision"
-            next_steps = "Future encounters should focus on moving toward proactive supervision by having the resident formulate and propose plans prior to execution."
-        elif "Zone 2" in zone:
-            zone_narrative = "required proactive supervision and routine preceptor review prior to acting"
-            next_steps = "Future encounters should encourage the resident to execute plans with reactive preceptor availability, building clinical confidence."
-        elif "Zone 3" in zone:
-            zone_narrative = "performed with reactive supervision, appropriately seeking guidance when clinically necessary"
-            next_steps = "The resident is progressing excellently; next steps involve pushing for full independence on routine cases within this topic."
-        else:
-            zone_narrative = "performed completely independently, serving as a reliable and competent practitioner"
-            next_steps = "The resident has achieved mastery in this area and should continue independent practice and peer mentoring."
-
-        auto_narrative = (
-            f"Resident {target_res} was evaluated on the clinical topic of {sel_topic}. "
-            f"During this encounter, the resident {zone_narrative} in order to {sub_obj_text}.\n\n"
-            f"Operating within the cognitive domain of {cog_domain}, the resident demonstrated the ability to {action_verb} "
-            f"as it relates to the broader program goal to {obj_text}.\n\n"
-            f"Targeted Next Steps: {next_steps}"
-        )
-
-        st.write("---")
-        st.subheader("📝 Pharmacademic Narrative")
-        final_narrative = st.text_area("Review and edit your evaluation text. (Copy this for Pharmacademic):", value=auto_narrative, height=200)
-        
-# --- AUTO-EXPORT TO GOOGLE SHEET VIA FORM POST ---
-        if st.button("🚀 Submit to Master Database", type="primary"):
-            
-            # 1. Grab today's date formatted correctly for Google Forms (YYYY-MM-DD)
-            current_date = datetime.date.today().strftime("%Y-%m-%d")
-            
-            # 2. Use /formResponse instead of /viewform to actually submit the data
-            post_url = "https://docs.google.com/forms/d/e/1FAIpQLSe8arpBwEQi2pzFEb7qKC9oag8SN11HEU-_gGN0vQkEWqvlYA/formResponse"
-            
-            # 3. The data dictionary (with all commas included!)
-            form_data = {
-                "entry.1175930505": target_res,                            # Resident Name
-                "entry.137559973": current_date,                           # Date
-                "entry.597824849": sel_topic,                              # Activity/Topic
-                "entry.575285059": activity_row['ASHP Objective'],         # ASHP Objective
-                "entry.930508246": activity_row['Cognitive Domain'],       # Bloom's Level
-                "entry.411526759": zone                                    # Zone
-            }
-            
-            try:
-                # Send the data silently in the background
-                response = requests.post(post_url, data=form_data)
-                
-                # Google Forms returns 200 for a successful submission
-                if response.status_code == 200:
-                    st.success(f"✅ Success! Evaluation for {target_res} securely logged to the Master Database.")
-                    st.balloons()
-                else:
-                    st.error(f"⚠️ Submission failed with status code: {response.status_code}. Check your variables.")
-            except Exception as e:
-                st.error(f"Error connecting to database: {e}")
-            
-    st.divider()
-    render_curriculum(user_role, user_tier)
 
 # --- RESIDENT/LEARNER VIEW ---
 elif user_role == "learner":
     st.title(f"Welcome, {name}!")
     
-    # --- INJECT STEP TRACKER (Always visible above tabs) ---
     render_step_tracker(name)
     st.write("---")
     
@@ -475,20 +386,15 @@ elif user_role == "learner":
         st.subheader("📈 My 10 Most Recent Evaluations")
         
         if not eval_df.empty:
-            # Filter to only this resident
             my_evals = eval_df[eval_df['Resident Name'] == name]
             
             if not my_evals.empty:
-                # Attempt to sort by Date if your Google Form column is named 'Date'
                 if 'Date' in my_evals.columns:
-                    # Convert to datetime for accurate sorting, then sort newest to oldest
                     my_evals['Date'] = pd.to_datetime(my_evals['Date'], errors='coerce')
                     recent_10 = my_evals.sort_values(by='Date', ascending=False).head(10)
                 else:
-                    # Fallback just in case the Date column is missing: grab the last 10 rows added
                     recent_10 = my_evals.tail(10)
                 
-                # Show the total count, but only display the dataframe of the recent 10
                 st.metric("Total Lifetime Evaluations Logged", len(my_evals))
                 st.dataframe(recent_10, use_container_width=True)
             else:
