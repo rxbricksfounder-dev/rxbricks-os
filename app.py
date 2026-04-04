@@ -292,8 +292,8 @@ def render_step_tracker(resident_name):
 # REUSABLE COMPONENT: EVALUATION TOOL
 # =========================================================
 def render_evaluation_tool():
-    if curriculum_df.empty:
-        st.warning("Curriculum data is unavailable.")
+    if curriculum_df.empty and rotation_tasks_df.empty:
+        st.warning("Curriculum and Task data are unavailable.")
         return
 
     res_names = users_df[users_df['Role'].str.upper() == 'RESIDENT']['Name'].tolist()
@@ -306,90 +306,177 @@ def render_evaluation_tool():
     render_step_tracker(target_res)
     st.write("---")
     
-    st.subheader("Evaluation Details")
-    cats = curriculum_df['Category / Module'].dropna().unique()
-    sel_cat = st.selectbox("Module", cats, key="eval_tool_cat")
+    eval_tabs = st.tabs(["⚡ Log Clinical Action", "📚 Evaluate Curriculum Topic"])
     
-    topics = curriculum_df[curriculum_df['Category / Module'] == sel_cat]['Topic'].dropna().unique()
-    if len(topics) == 0:
-        st.warning("No topics found for this module.")
-        return
+    # ---------------------------------------------------------
+    # TAB 1: ACTION-ORIENTED EVALUATION (The Multi-Select Fix)
+    # ---------------------------------------------------------
+    with eval_tabs[0]:
+        st.subheader("Action-Oriented Evaluation")
+        if rotation_tasks_df.empty:
+            st.info("No clinical task mappings available.")
+        else:
+            clean_tasks = rotation_tasks_df.dropna(subset=['Actionable_Activity'])
+            action_mapping = clean_tasks.groupby('Actionable_Activity')['ASHP_Sub_Objective'].apply(
+                lambda x: [str(item) for item in x if pd.notna(item)]
+            ).to_dict()
+            
+            selected_action = st.selectbox("Select Prediction Event / Clinical Action", options=list(action_mapping.keys()), key="eval_action_sel")
+            
+            if selected_action:
+                available_objs = action_mapping.get(selected_action, [])
+                applicable_objectives = st.multiselect(
+                    "Associated ASHP Objectives Satisfied", 
+                    options=available_objs,
+                    default=available_objs,
+                    key="eval_action_multi"
+                )
+                
+                zone_action = st.radio("Entrustment Zone:", [
+                    "Zone 1: Direct Supervision", 
+                    "Zone 2: Proactive Supervision", 
+                    "Zone 3: Reactive Supervision", 
+                    "Zone 4: Independent"
+                ], key="eval_tool_zone_action")
+                
+                st.write("---")
+                st.subheader("📝 Pharmacademic Narrative")
+                
+                if "Zone 1" in zone_action:
+                    zone_narrative = "required direct and continuous supervision"
+                    next_steps = "Future encounters should focus on moving toward proactive supervision."
+                elif "Zone 2" in zone_action:
+                    zone_narrative = "required proactive supervision and routine preceptor review prior to acting"
+                    next_steps = "Future encounters should encourage the resident to execute plans with reactive preceptor availability."
+                elif "Zone 3" in zone_action:
+                    zone_narrative = "performed with reactive supervision, appropriately seeking guidance when clinically necessary"
+                    next_steps = "The resident is progressing excellently; next steps involve pushing for full independence."
+                else:
+                    zone_narrative = "performed completely independently, serving as a reliable and competent practitioner"
+                    next_steps = "The resident has achieved mastery in this area and should continue independent practice."
+                
+                objs_str = "; ".join(applicable_objectives) if applicable_objectives else "general clinical expectations"
+                
+                auto_action_narrative = (
+                    f"Resident {target_res} was evaluated on the clinical action: '{selected_action}'.\n\n"
+                    f"During this encounter, the resident {zone_narrative}.\n\n"
+                    f"This clinical action successfully demonstrated competence toward the following ASHP objectives:\n{objs_str}\n\n"
+                    f"Targeted Next Steps: {next_steps}"
+                )
+                
+                final_action_narrative = st.text_area("Review and edit your evaluation text. (Copy this for Pharmacademic):", value=auto_action_narrative, height=200, key="eval_action_narrative")
+                
+                if st.button("🚀 Log Clinical Action", type="primary", key="eval_action_submit"):
+                    current_date = datetime.date.today().strftime("%Y-%m-%d")
+                    post_url = "https://docs.google.com/forms/d/e/1FAIpQLSe8arpBwEQi2pzFEb7qKC9oag8SN11HEU-_gGN0vQkEWqvlYA/formResponse"
+                    
+                    logged_objs = " | ".join(applicable_objectives)
+                    
+                    form_data = {
+                        "entry.1175930505": target_res,                            
+                        "entry.137559973": current_date,                           
+                        "entry.597824849": selected_action,                              
+                        "entry.575285059": logged_objs,         
+                        "entry.930508246": "Clinical Action Application",       
+                        "entry.411526759": zone_action                                    
+                    }
+                    
+                    try:
+                        response = requests.post(post_url, data=form_data)
+                        if response.status_code == 200:
+                            st.success(f"✅ Success! Clinical action for {target_res} securely logged to the Master Database.")
+                            st.balloons()
+                        else:
+                            st.error(f"⚠️ Submission failed with status code: {response.status_code}.")
+                    except Exception as e:
+                        st.error(f"Error connecting to database: {e}")
 
-    sel_topic = st.selectbox("Activity", topics, key="eval_tool_topic")
-    
-    topic_data = curriculum_df[curriculum_df['Topic'] == sel_topic]
-    if topic_data.empty:
-        st.warning("Data missing for this activity.")
-        return
-
-    activity_row = topic_data.iloc[0]
-    
-    raw_obj = activity_row.get('ASHP Objective', 'Patient Care Objective')
-    raw_sub_obj = activity_row.get('ASHP Sub-Objective', 'Perform clinical duties')
-    raw_miller = activity_row.get('Competence Level (Miller)', 'N/A')
-    
-    st.info(f"**Target Competence (Miller's):** {raw_miller}\n\n**ASHP Objective:** {raw_obj}\n\n**Sub-Objective:** {raw_sub_obj}")
-    
-    zone = st.radio("Entrustment Zone:", [
-        "Zone 1: Direct Supervision", 
-        "Zone 2: Proactive Supervision", 
-        "Zone 3: Reactive Supervision", 
-        "Zone 4: Independent"
-    ], key="eval_tool_zone")
-    
-    obj_text = str(raw_obj).lower()
-    sub_obj_text = str(raw_sub_obj).replace('"', '').strip()
-    action_verb = str(activity_row.get('Action Verb', 'evaluate')).lower()
-    cog_domain = str(activity_row.get('Cognitive Domain', 'application')).lower()
-    miller_level = str(raw_miller).lower()
-    
-    if "Zone 1" in zone:
-        zone_narrative = "required direct and continuous supervision"
-        next_steps = "Future encounters should focus on moving toward proactive supervision by having the resident formulate and propose plans prior to execution."
-    elif "Zone 2" in zone:
-        zone_narrative = "required proactive supervision and routine preceptor review prior to acting"
-        next_steps = "Future encounters should encourage the resident to execute plans with reactive preceptor availability, building clinical confidence."
-    elif "Zone 3" in zone:
-        zone_narrative = "performed with reactive supervision, appropriately seeking guidance when clinically necessary"
-        next_steps = "The resident is progressing excellently; next steps involve pushing for full independence on routine cases within this topic."
-    else:
-        zone_narrative = "performed completely independently, serving as a reliable and competent practitioner"
-        next_steps = "The resident has achieved mastery in this area and should continue independent practice and peer mentoring."
-
-    auto_narrative = (
-        f"Resident {target_res} was evaluated on the clinical topic of {sel_topic}. "
-        f"During this encounter, the resident {zone_narrative} in order to {sub_obj_text}.\n\n"
-        f"Operating within the cognitive domain of {cog_domain} and targeting the '{miller_level}' level of clinical competence, the resident demonstrated the ability to {action_verb} "
-        f"as it relates to the broader program goal to {obj_text}.\n\n"
-        f"Targeted Next Steps: {next_steps}"
-    )
-
-    st.write("---")
-    st.subheader("📝 Pharmacademic Narrative")
-    final_narrative = st.text_area("Review and edit your evaluation text. (Copy this for Pharmacademic):", value=auto_narrative, height=200, key="eval_tool_narrative")
-    
-    if st.button("🚀 Submit to Master Database", type="primary", key="eval_tool_submit"):
-        current_date = datetime.date.today().strftime("%Y-%m-%d")
-        post_url = "https://docs.google.com/forms/d/e/1FAIpQLSe8arpBwEQi2pzFEb7qKC9oag8SN11HEU-_gGN0vQkEWqvlYA/formResponse"
+    # ---------------------------------------------------------
+    # TAB 2: CURRICULUM TOPIC EVALUATION
+    # ---------------------------------------------------------
+    with eval_tabs[1]:
+        st.subheader("Curriculum Topic Evaluation")
+        cats = curriculum_df['Category / Module'].dropna().unique()
+        sel_cat = st.selectbox("Module", cats, key="eval_tool_cat")
         
-        form_data = {
-            "entry.1175930505": target_res,                            
-            "entry.137559973": current_date,                           
-            "entry.597824849": sel_topic,                              
-            "entry.575285059": raw_obj,         
-            "entry.930508246": activity_row.get('Cognitive Domain', 'N/A'),       
-            "entry.411526759": zone                                    
-        }
-        
-        try:
-            response = requests.post(post_url, data=form_data)
-            if response.status_code == 200:
-                st.success(f"✅ Success! Evaluation for {target_res} securely logged to the Master Database.")
-                st.balloons()
+        topics = curriculum_df[curriculum_df['Category / Module'] == sel_cat]['Topic'].dropna().unique()
+        if len(topics) == 0:
+            st.warning("No topics found for this module.")
+        else:
+            sel_topic = st.selectbox("Activity", topics, key="eval_tool_topic")
+            
+            topic_data = curriculum_df[curriculum_df['Topic'] == sel_topic]
+            if topic_data.empty:
+                st.warning("Data missing for this activity.")
             else:
-                st.error(f"⚠️ Submission failed with status code: {response.status_code}.")
-        except Exception as e:
-            st.error(f"Error connecting to database: {e}")
+                activity_row = topic_data.iloc[0]
+                
+                raw_obj = activity_row.get('ASHP Objective', 'Patient Care Objective')
+                raw_sub_obj = activity_row.get('ASHP Sub-Objective', 'Perform clinical duties')
+                raw_miller = activity_row.get('Competence Level (Miller)', 'N/A')
+                
+                st.info(f"**Target Competence (Miller's):** {raw_miller}\n\n**ASHP Objective:** {raw_obj}\n\n**Sub-Objective:** {raw_sub_obj}")
+                
+                zone = st.radio("Entrustment Zone:", [
+                    "Zone 1: Direct Supervision", 
+                    "Zone 2: Proactive Supervision", 
+                    "Zone 3: Reactive Supervision", 
+                    "Zone 4: Independent"
+                ], key="eval_tool_zone")
+                
+                obj_text = str(raw_obj).lower()
+                sub_obj_text = str(raw_sub_obj).replace('"', '').strip()
+                action_verb = str(activity_row.get('Action Verb', 'evaluate')).lower()
+                cog_domain = str(activity_row.get('Cognitive Domain', 'application')).lower()
+                miller_level = str(raw_miller).lower()
+                
+                if "Zone 1" in zone:
+                    zone_narrative = "required direct and continuous supervision"
+                    next_steps = "Future encounters should focus on moving toward proactive supervision by having the resident formulate and propose plans prior to execution."
+                elif "Zone 2" in zone:
+                    zone_narrative = "required proactive supervision and routine preceptor review prior to acting"
+                    next_steps = "Future encounters should encourage the resident to execute plans with reactive preceptor availability, building clinical confidence."
+                elif "Zone 3" in zone:
+                    zone_narrative = "performed with reactive supervision, appropriately seeking guidance when clinically necessary"
+                    next_steps = "The resident is progressing excellently; next steps involve pushing for full independence on routine cases within this topic."
+                else:
+                    zone_narrative = "performed completely independently, serving as a reliable and competent practitioner"
+                    next_steps = "The resident has achieved mastery in this area and should continue independent practice and peer mentoring."
+
+                auto_narrative = (
+                    f"Resident {target_res} was evaluated on the clinical topic of {sel_topic}. "
+                    f"During this encounter, the resident {zone_narrative} in order to {sub_obj_text}.\n\n"
+                    f"Operating within the cognitive domain of {cog_domain} and targeting the '{miller_level}' level of clinical competence, the resident demonstrated the ability to {action_verb} "
+                    f"as it relates to the broader program goal to {obj_text}.\n\n"
+                    f"Targeted Next Steps: {next_steps}"
+                )
+
+                st.write("---")
+                st.subheader("📝 Pharmacademic Narrative")
+                final_narrative = st.text_area("Review and edit your evaluation text. (Copy this for Pharmacademic):", value=auto_narrative, height=200, key="eval_tool_narrative")
+                
+                if st.button("🚀 Submit Topic to Master Database", type="primary", key="eval_tool_submit"):
+                    current_date = datetime.date.today().strftime("%Y-%m-%d")
+                    post_url = "https://docs.google.com/forms/d/e/1FAIpQLSe8arpBwEQi2pzFEb7qKC9oag8SN11HEU-_gGN0vQkEWqvlYA/formResponse"
+                    
+                    form_data = {
+                        "entry.1175930505": target_res,                            
+                        "entry.137559973": current_date,                           
+                        "entry.597824849": sel_topic,                              
+                        "entry.575285059": raw_obj,         
+                        "entry.930508246": activity_row.get('Cognitive Domain', 'N/A'),       
+                        "entry.411526759": zone                                    
+                    }
+                    
+                    try:
+                        response = requests.post(post_url, data=form_data)
+                        if response.status_code == 200:
+                            st.success(f"✅ Success! Evaluation for {target_res} securely logged to the Master Database.")
+                            st.balloons()
+                        else:
+                            st.error(f"⚠️ Submission failed with status code: {response.status_code}.")
+                    except Exception as e:
+                        st.error(f"Error connecting to database: {e}")
 
 # =========================================================
 # DAILY ACTIVITIES & CLINICAL POLICIES MODULE
@@ -417,28 +504,23 @@ def render_daily_operations(resident_name):
     rotation_subject = today_sched.iloc[0]['Subject']
     st.markdown(f"**Assigned Rotation:** `{rotation_subject}`")
     
-    # Safely pull tasks mapped to today's rotation ID
     daily_tasks = rotation_tasks_df[rotation_tasks_df['Rotation_ID'] == rotation_subject].copy()
     
     if daily_tasks.empty:
         st.warning(f"No task mappings found for {rotation_subject}.")
         return
         
-    # --- DYNAMIC DICTIONARY MAPPING ---
-    # Group the tasks by the headers generated from the dictionary rather than a static sheet column
+    # --- DYNAMIC DICTIONARY MAPPING (Grouped by Action to Prevent Duplicate Checkboxes) ---
     grouped_tasks = {}
     
-    for idx, task_row in daily_tasks.iterrows():
-        activity_text = task_row.get('Actionable_Activity', 'Unknown Task')
-        raw_sub_obj = task_row.get('ASHP_Sub_Objective', '')
+    action_group = daily_tasks.groupby('Actionable_Activity')
+    
+    for action_text, group in action_group:
+        sub_objs = group['ASHP_Sub_Objective'].dropna().astype(str).tolist()
         
-        # Extract the objective code (e.g., getting "R1.1.5" out of "R1.1.5 Design, or redesign...")
-        if pd.notna(raw_sub_obj) and str(raw_sub_obj).strip() != "":
-            objective_code = str(raw_sub_obj).replace('"', '').strip().split(' ')[0]
-        else:
-            objective_code = "ROTATION_EXPECTATION"
+        primary_sub_obj = sub_objs[0] if sub_objs else ""
+        objective_code = primary_sub_obj.replace('"', '').strip().split(' ')[0] if primary_sub_obj else "ROTATION_EXPECTATION"
             
-        # Push through the translation dictionary
         mapping_data = ASHP_TO_CLINICAL_ROLE.get(objective_code, {
             "role_name": "General Clinical Task",
             "ui_header": "### 📋 General Clinical Tasks",
@@ -450,31 +532,31 @@ def render_daily_operations(resident_name):
         if header not in grouped_tasks:
             grouped_tasks[header] = []
             
-        target_level = str(task_row.get('Action_Verb', 'General Target'))
+        target_level = str(group['Action_Verb'].iloc[0]) if 'Action_Verb' in group.columns else 'General Target'
+        
+        # Combine the objective codes for display so the resident sees all satisfied targets
+        obj_codes_display = ", ".join([str(x).replace('"', '').strip().split(' ')[0] for x in sub_objs if pd.notna(x)])
         
         grouped_tasks[header].append({
-            "idx": idx,
-            "code": objective_code,
-            "activity": activity_text,
+            "activity": action_text,
+            "codes": obj_codes_display,
             "target": target_level,
-            "desc": mapping_data['description']
+            "idx": group.index[0] 
         })
 
     # --- UI RENDERING ---
     for header, tasks in grouped_tasks.items():
         st.write("---")
         task_count = len(tasks)
-        
-        # Clean the header string to use in the expander title (removes the markdown hashes)
         role_title = header.replace('### ', '')
         
-        with st.expander(f"{role_title} ({task_count} tasks)", expanded=True):
+        with st.expander(f"{role_title} ({task_count} unique tasks)", expanded=True):
             with st.container(height=400, border=False):
                 for task in tasks:
-                    checkbox_key = f"{resident_name}_{rotation_subject}_{task['code']}_{task['idx']}"
+                    checkbox_key = f"{resident_name}_{rotation_subject}_{task['idx']}"
                     
                     st.checkbox(
-                        f"**[{task['code']}]** {task['activity']} *(Target: {task['target']})*", 
+                        f"**[{task['codes']}]** {task['activity']} *(Target: {task['target']})*", 
                         key=checkbox_key
                     )
 
