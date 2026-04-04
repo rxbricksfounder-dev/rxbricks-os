@@ -316,55 +316,60 @@ def get_todays_schedule(target_name=None):
 import streamlit as st
 import pandas as pd
 
-def render_daily_operations(rotation_tasks_df, rotation_subject):
-    st.header(f"🏥 Daily Operations: {rotation_subject}")
-    st.markdown("Check off your actionable activities as you complete them during your shift.")
+def render_daily_operations(resident_name):
+    st.subheader("🎯 Today's Clinical Policies & Activities")
+    
+    # 1. Get today's rotation from the schedule
+    today_sched = get_todays_schedule(resident_name)
+    
+    if today_sched.empty:
+        st.info("No specific clinical rotations scheduled today. Focus on curriculum modules or project work.")
+        return
 
-    # 1. Filter the master dataframe for the current rotation
+    rotation_subject = today_sched.iloc[0]['Subject']
+    st.markdown(f"**Assigned Rotation:** `{rotation_subject}`")
+    
+    # 2. Filter the mapping dataframe (using the global rotation_tasks_df)
     daily_tasks = rotation_tasks_df[rotation_tasks_df['Rotation_ID'] == rotation_subject]
     
     if daily_tasks.empty:
-        st.info("No tasks scheduled for this rotation today.")
+        st.warning(f"No task mappings found for {rotation_subject}.")
         return
-
-    # 2. Identify all unique clinical roles for this shift
+        
+    # 3. Dynamically generate the UI grouped by 'Clinical_Role'
     roles = daily_tasks['Clinical_Role'].dropna().unique()
     
-    # 3. Iterate through each role and build the UI
     for role in roles:
         role_tasks = daily_tasks[daily_tasks['Clinical_Role'] == role]
-        task_count = len(role_tasks)
+        task_count = len(role_tasks) # Calculate tasks for the UI header
         
-        # Create a collapsible expander for the role. 
-        # Including the task_count helps the user know what's inside.
+        st.write("---")
+        
+        # --- UI UPGRADE: Expander and Scrollable Container ---
         with st.expander(f"📋 {role} ({task_count} tasks)", expanded=False):
-            
-            # OPTIONAL: If a single role has a massive amount of tasks, 
-            # you can force a scrollable window inside the expander.
-            # Remove the 'height' parameter if you just want it to stretch naturally.
+            # Set a fixed height to make this section scrollable if it gets too long
             with st.container(height=400, border=False):
                 
-                for index, row in role_tasks.iterrows():
-                    # Handle empty objective/verb cells gracefully
-                    objective = row['ASHP_Sub_Objective'] if pd.notna(row['ASHP_Sub_Objective']) else "Goal"
-                    verb = row['Action_Verb'] if pd.notna(row['Action_Verb']) else "Execute"
-                    activity = row['Actionable_Activity']
+                for idx, task_row in role_tasks.iterrows():
+                    activity_text = task_row['Actionable_Activity']
                     
-                    # Create a highly unique key so Streamlit remembers if it's checked
-                    # even if the page refreshes
-                    chk_key = f"chk_{rotation_subject}_{role}_{index}"
+                    # Evaluate the raw data before converting to string to prevent [nan]
+                    raw_sub_obj = task_row['ASHP_Sub_Objective']
+                    if pd.notna(raw_sub_obj) and str(raw_sub_obj).strip() != "":
+                        objective_code = str(raw_sub_obj).split(' ')[0]
+                    else:
+                        objective_code = "Goal"
                     
-                    # Format the text using Markdown for readability
-                    display_text = f"**{verb}**: {activity}  \n*(Ref: {objective})*"
+                    # Combine Domain and Verb for the UI target (e.g., "Applying - Carry Out")
+                    target_level = str(task_row['Action_Verb'])
                     
-                    # Render the checkbox
-                    st.checkbox(display_text, key=chk_key)
-
-    # A placeholder button for when you hook this up to your database backend
-    st.divider()
-    if st.button("💾 Save Shift Progress", type="primary"):
-        st.success("Progress saved successfully!")
-        # Logic to write checkbox states (st.session_state) back to your database goes here
+                    checkbox_key = f"{resident_name}_{rotation_subject}_{role}_{idx}"
+                    
+                    # Render the UI
+                    st.checkbox(
+                        f"**[{objective_code}]** {activity_text} *(Target: {target_level})*", 
+                        key=checkbox_key
+                    )
 
 def render_assignments(resident_name):
     """Pulls from 5_Assignments_EM and provides submission links, filtered by user."""
