@@ -6,6 +6,108 @@ import streamlit_authenticator as stauth
 import bcrypt
 import streamlit.components.v1 as components
 
+# =========================================================
+# UI TRANSLATION DICTIONARY (ASHP to Clinical Role)
+# =========================================================
+ASHP_TO_CLINICAL_ROLE = {
+    # BEDSIDE EMERGENCY RESPONSE
+    "R1.1.6": {
+        "role_name": "Bedside Emergency Response",
+        "ui_header": "### 🚨 Acute Medical Response & Direct Care",
+        "description": "Ensure implementation of therapeutic regimens."
+    },
+    "R5.1.1": {
+        "role_name": "Medical Emergency Management & Leadership",
+        "ui_header": "### 🚨 Acute Medical Response & Direct Care",
+        "description": "Demonstrate the essential role of the EM pharmacist in emergencies."
+    },
+
+    # MULTIDISCIPLINARY INTERACTION & DRUG INFO
+    "R1.1.1": {
+        "role_name": "Multidisciplinary Interaction & Drug Info",
+        "ui_header": "### 🗣️ Multidisciplinary Interaction & Drug Info",
+        "description": "Interact effectively with health care teams."
+    },
+    "R1.1.2": {
+        "role_name": "Multidisciplinary Interaction & Drug Info",
+        "ui_header": "### 🗣️ Multidisciplinary Interaction & Drug Info",
+        "description": "Interact effectively with patients, family, and caregivers."
+    },
+    "R1.1.7": {
+        "role_name": "Multidisciplinary Interaction & Drug Info",
+        "ui_header": "### 🗣️ Multidisciplinary Interaction & Drug Info",
+        "description": "Communicate and document direct patient care activities."
+    },
+
+    # PATIENT WORK-UPS & PRECEPTOR DISCUSSION
+    "R1.1.3": {
+        "role_name": "Patient Work-ups & Preceptor Discussion",
+        "ui_header": "### 🧠 Patient Work-ups & Preceptor Discussion",
+        "description": "Collect and analyze information to base safe therapy."
+    },
+    "R1.1.4": {
+        "role_name": "Patient Work-ups & Preceptor Discussion",
+        "ui_header": "### 🧠 Patient Work-ups & Preceptor Discussion",
+        "description": "Analyze and assess information for safe medication therapy."
+    },
+    "R1.1.5": {
+        "role_name": "Patient Work-ups & Preceptor Discussion",
+        "ui_header": "### 🧠 Patient Work-ups & Preceptor Discussion",
+        "description": "Design safe and effective patient-centered therapeutic regimens."
+    },
+    "R1.1.8": {
+        "role_name": "Patient Work-ups & Preceptor Discussion",
+        "ui_header": "### 🧠 Patient Work-ups & Preceptor Discussion",
+        "description": "Demonstrate responsibility for patient outcomes."
+    },
+    "R1.2.1": {
+        "role_name": "Patient Work-ups & Preceptor Discussion",
+        "ui_header": "### 🔄 Transitions of Care",
+        "description": "Manage transitions of care effectively."
+    },
+
+    # MEDICATION PREPARATION & DELIVERY
+    "R1.3.1": {
+        "role_name": "Medication Preparation & Delivery",
+        "ui_header": "### 💊 Medication Preparation & Delivery",
+        "description": "Facilitate delivery of medications following best practices."
+    },
+    "R1.3.2": {
+        "role_name": "Medication Preparation & Delivery",
+        "ui_header": "### 💊 Medication Preparation & Delivery",
+        "description": "Manage aspects of the medication-use process related to formulary."
+    },
+    "R1.3.3": {
+        "role_name": "Medication Preparation & Delivery",
+        "ui_header": "### 💊 Medication Preparation & Delivery",
+        "description": "Facilitate aspects of the medication-use process."
+    },
+
+    # DEPARTMENTAL RESPONSIBILITIES & QUALITY IMPROVEMENT
+    "R2.1.1": {
+        "role_name": "Systems Educator & Innovator",
+        "ui_header": "### 📋 Departmental Responsibilities & Projects",
+        "description": "Prepare or revise a drug class review, monograph, or guideline."
+    },
+    "R2.1.2": {
+        "role_name": "Systems Educator & Innovator",
+        "ui_header": "### 📋 Departmental Responsibilities & Projects",
+        "description": "Identify opportunities for improvement of the medication-use system."
+    },
+    "R2.2.1": {
+        "role_name": "Systems Educator & Innovator",
+        "ui_header": "### 📋 Departmental Responsibilities & Projects",
+        "description": "Identify and demonstrate understanding of specific project topic."
+    },
+    
+    # Catch-all
+    "ROTATION_EXPECTATION": {
+        "role_name": "Departmental Responsibilities",
+        "ui_header": "### 📋 General Rotation Expectations",
+        "description": "General rotation expectations, meetings, and standard duties."
+    }
+}
+
 # 1. SETTINGS & CONFIG
 st.set_page_config(page_title="RxBricks: EM Trust Verification", layout="wide", page_icon="🧱")
 
@@ -31,9 +133,8 @@ def load_all_data():
         return curr, resp, sched, user_db, assign_df, rotation_tasks_df
     except Exception as e:
         st.error(f"⚠️ Link Verification Error: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-# Update the unpacking line to include assignments_df
 curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df = load_all_data()
 
 # 4. AUTHENTICATION SETUP
@@ -84,7 +185,6 @@ def render_curriculum(current_role, current_tier):
     st.subheader("📚 Vision 2026 Curriculum Library")
     all_cats = curriculum_df['Category / Module'].dropna().unique()
     
-    # MOVED FROM SIDEBAR TO MAIN VIEW FOR BETTER TAB UX
     col_nav1, col_nav2 = st.columns(2)
     with col_nav1:
         main_cat = st.selectbox("Navigate Module", all_cats, key="curr_cat_sel")
@@ -224,12 +324,10 @@ def render_evaluation_tool():
 
     activity_row = topic_data.iloc[0]
     
-    # Safely get variables using .get() to prevent KeyErrors
     raw_obj = activity_row.get('ASHP Objective', 'Patient Care Objective')
     raw_sub_obj = activity_row.get('ASHP Sub-Objective', 'Perform clinical duties')
     raw_miller = activity_row.get('Competence Level (Miller)', 'N/A')
     
-    # --- NEW: Display Miller's level for the Preceptor ---
     st.info(f"**Target Competence (Miller's):** {raw_miller}\n\n**ASHP Objective:** {raw_obj}\n\n**Sub-Objective:** {raw_sub_obj}")
     
     zone = st.radio("Entrustment Zone:", [
@@ -239,7 +337,6 @@ def render_evaluation_tool():
         "Zone 4: Independent"
     ], key="eval_tool_zone")
     
-    # Clean text for narrative
     obj_text = str(raw_obj).lower()
     sub_obj_text = str(raw_sub_obj).replace('"', '').strip()
     action_verb = str(activity_row.get('Action Verb', 'evaluate')).lower()
@@ -259,7 +356,6 @@ def render_evaluation_tool():
         zone_narrative = "performed completely independently, serving as a reliable and competent practitioner"
         next_steps = "The resident has achieved mastery in this area and should continue independent practice and peer mentoring."
 
-    # --- NEW: Injected Miller's Level into the formal paragraph ---
     auto_narrative = (
         f"Resident {target_res} was evaluated on the clinical topic of {sel_topic}. "
         f"During this encounter, the resident {zone_narrative} in order to {sub_obj_text}.\n\n"
@@ -296,30 +392,22 @@ def render_evaluation_tool():
             st.error(f"Error connecting to database: {e}")
 
 # =========================================================
-# NEW: DAILY ACTIVITIES & CLINICAL POLICIES MODULE
+# DAILY ACTIVITIES & CLINICAL POLICIES MODULE
 # =========================================================
 def get_todays_schedule(target_name=None):
-    """Filters the schedule_df for today's date."""
     if schedule_df.empty: return pd.DataFrame()
     today_str = datetime.date.today().strftime("%Y-%m-%d")
     
-    # Assuming 'Date' or 'Start Date' is the column name in schedule_df
     date_col = 'Start Date' if 'Start Date' in schedule_df.columns else 'Date'
-    
-    # Filter for today
     today_sched = schedule_df[schedule_df[date_col] == today_str]
     
     if target_name:
         today_sched = today_sched[today_sched['Resident Name'] == target_name]
     return today_sched
 
-import streamlit as st
-import pandas as pd
-
 def render_daily_operations(resident_name):
     st.subheader("🎯 Today's Clinical Policies & Activities")
     
-    # 1. Get today's rotation from the schedule
     today_sched = get_todays_schedule(resident_name)
     
     if today_sched.empty:
@@ -329,76 +417,87 @@ def render_daily_operations(resident_name):
     rotation_subject = today_sched.iloc[0]['Subject']
     st.markdown(f"**Assigned Rotation:** `{rotation_subject}`")
     
-    # 2. Filter the mapping dataframe (using the global rotation_tasks_df)
-    daily_tasks = rotation_tasks_df[rotation_tasks_df['Rotation_ID'] == rotation_subject]
+    # Safely pull tasks mapped to today's rotation ID
+    daily_tasks = rotation_tasks_df[rotation_tasks_df['Rotation_ID'] == rotation_subject].copy()
     
     if daily_tasks.empty:
         st.warning(f"No task mappings found for {rotation_subject}.")
         return
         
-    # 3. Dynamically generate the UI grouped by 'Clinical_Role'
-    roles = daily_tasks['Clinical_Role'].dropna().unique()
+    # --- DYNAMIC DICTIONARY MAPPING ---
+    # Group the tasks by the headers generated from the dictionary rather than a static sheet column
+    grouped_tasks = {}
     
-    for role in roles:
-        role_tasks = daily_tasks[daily_tasks['Clinical_Role'] == role]
-        task_count = len(role_tasks) # Calculate tasks for the UI header
+    for idx, task_row in daily_tasks.iterrows():
+        activity_text = task_row.get('Actionable_Activity', 'Unknown Task')
+        raw_sub_obj = task_row.get('ASHP_Sub_Objective', '')
         
+        # Extract the objective code (e.g., getting "R1.1.5" out of "R1.1.5 Design, or redesign...")
+        if pd.notna(raw_sub_obj) and str(raw_sub_obj).strip() != "":
+            objective_code = str(raw_sub_obj).replace('"', '').strip().split(' ')[0]
+        else:
+            objective_code = "ROTATION_EXPECTATION"
+            
+        # Push through the translation dictionary
+        mapping_data = ASHP_TO_CLINICAL_ROLE.get(objective_code, {
+            "role_name": "General Clinical Task",
+            "ui_header": "### 📋 General Clinical Tasks",
+            "description": "General clinical expectation."
+        })
+        
+        header = mapping_data['ui_header']
+        
+        if header not in grouped_tasks:
+            grouped_tasks[header] = []
+            
+        target_level = str(task_row.get('Action_Verb', 'General Target'))
+        
+        grouped_tasks[header].append({
+            "idx": idx,
+            "code": objective_code,
+            "activity": activity_text,
+            "target": target_level,
+            "desc": mapping_data['description']
+        })
+
+    # --- UI RENDERING ---
+    for header, tasks in grouped_tasks.items():
         st.write("---")
+        task_count = len(tasks)
         
-        # --- UI UPGRADE: Expander and Scrollable Container ---
-        with st.expander(f"📋 {role} ({task_count} tasks)", expanded=False):
-            # Set a fixed height to make this section scrollable if it gets too long
+        # Clean the header string to use in the expander title (removes the markdown hashes)
+        role_title = header.replace('### ', '')
+        
+        with st.expander(f"{role_title} ({task_count} tasks)", expanded=True):
             with st.container(height=400, border=False):
-                
-                for idx, task_row in role_tasks.iterrows():
-                    activity_text = task_row['Actionable_Activity']
+                for task in tasks:
+                    checkbox_key = f"{resident_name}_{rotation_subject}_{task['code']}_{task['idx']}"
                     
-                    # Evaluate the raw data before converting to string to prevent [nan]
-                    raw_sub_obj = task_row['ASHP_Sub_Objective']
-                    if pd.notna(raw_sub_obj) and str(raw_sub_obj).strip() != "":
-                        objective_code = str(raw_sub_obj).split(' ')[0]
-                    else:
-                        objective_code = "Goal"
-                    
-                    # Combine Domain and Verb for the UI target (e.g., "Applying - Carry Out")
-                    target_level = str(task_row['Action_Verb'])
-                    
-                    checkbox_key = f"{resident_name}_{rotation_subject}_{role}_{idx}"
-                    
-                    # Render the UI
                     st.checkbox(
-                        f"**[{objective_code}]** {activity_text} *(Target: {target_level})*", 
+                        f"**[{task['code']}]** {task['activity']} *(Target: {task['target']})*", 
                         key=checkbox_key
                     )
 
+
 def render_assignments(resident_name):
-    """Pulls from 5_Assignments_EM and provides submission links, filtered by user."""
     st.subheader("📝 Pending Assignments & Tasks")
     
     if assignments_df.empty:
         st.info("No assignments data loaded.")
         return
         
-    # --- 1. USER FILTERING LOGIC ---
     if 'Assigned To' in assignments_df.columns:
-        # Fill blank cells with "All PGY2" so global assignments aren't accidentally dropped
         assignments_df['Assigned To'] = assignments_df['Assigned To'].fillna("All PGY2")
-        
-        # Create a mask: Keep row if resident's name is in the string OR if it contains "All PGY2"
         mask = assignments_df['Assigned To'].apply(
             lambda x: resident_name.lower() in str(x).lower() or "all" in str(x).lower()
         )
-        user_assignments = assignments_df[mask].copy() # Use copy to avoid setting warnings
+        user_assignments = assignments_df[mask].copy() 
     else:
-        # Fallback if the column hasn't been added to the sheet yet
         user_assignments = assignments_df.copy()
 
-    # --- 2. DATE FILTERING LOGIC ---
     if 'Start Date' in user_assignments.columns:
         user_assignments['Start Date'] = pd.to_datetime(user_assignments['Start Date'], errors='coerce')
         today = pd.to_datetime(datetime.date.today())
-        
-        # Filter for assignments from today onward
         upcoming_assign = user_assignments[user_assignments['Start Date'] >= today].sort_values(by='Start Date').head(5)
     else:
         upcoming_assign = user_assignments.head(5)
@@ -407,12 +506,10 @@ def render_assignments(resident_name):
         st.success("🎉 You have no pending assignments right now!")
         return
 
-    # --- 3. UI RENDERING ---
     for idx, row in upcoming_assign.iterrows():
         assign_title = row.get('Subject', 'Unknown Assignment')
         due_date = row['Start Date'].strftime('%B %d, %Y') if pd.notna(row.get('Start Date')) else "Ongoing"
         
-        # Form link logic
         form_link = row.get('Form Link')
         if pd.isna(form_link) or str(form_link).strip() == "": 
             form_link = "https://docs.google.com/forms/d/e/1FAIpQLScB7n7l8VaKUGHJo60TCngFhnMF_YiBV-S-pY7xQO1p5bAkQg/viewform?usp=sharing&ouid=103419041044944178788"
@@ -421,12 +518,9 @@ def render_assignments(resident_name):
             st.markdown(f"**Instructions:** Complete the required documentation for `{assign_title}`.")
             
             col1, col2 = st.columns([1, 1])
-            
             with col1:
                 st.link_button("1️⃣ Open Assignment Form", form_link, type="primary", use_container_width=True)
-                
             with col2:
-                # Visual toggle so the resident can check it off
                 submit_key = f"submit_{resident_name}_{assign_title}_{idx}"
                 if st.checkbox("2️⃣ Mark as Submitted", key=submit_key):
                     st.success("Marked as complete! Your RPD can now review your submission.")
@@ -438,13 +532,11 @@ def render_assignment_tracker():
         st.info("No assignment data available to track.")
         return
 
-    # 1. Get all active residents
     residents = users_df[users_df['Role'].str.upper() == 'RESIDENT']['Name'].tolist()
     if not residents:
         st.warning("No residents found in the system.")
         return
 
-    # 2. Build the master tracking list dynamically
     tracker_data = []
     
     if 'Assigned To' not in assignments_df.columns:
@@ -453,7 +545,6 @@ def render_assignment_tracker():
         assignments_df['Assigned To'] = assignments_df['Assigned To'].fillna("All PGY2")
 
     for res in residents:
-        # Filter assignments for this specific resident
         mask = assignments_df['Assigned To'].apply(
             lambda x: res.lower() in str(x).lower() or "all" in str(x).lower()
         )
@@ -463,17 +554,12 @@ def render_assignment_tracker():
             assign_title = row.get('Subject', 'Unknown Assignment')
             start_date = row.get('Start Date', 'Ongoing')
             
-            # --- STATUS CHECK LOGIC ---
-            # We cross-reference the master responses database (eval_df) 
-            # to see if the resident has submitted this specific assignment.
             status = "⏳ Pending"
             if not eval_df.empty:
-                # Adjust these column names if your responses sheet uses different headers
                 res_col = 'Resident Name' if 'Resident Name' in eval_df.columns else None
                 topic_col = 'Activity' if 'Activity' in eval_df.columns else ('Topic' if 'Topic' in eval_df.columns else None)
                 
                 if res_col and topic_col:
-                    # Check if a row exists with this resident AND this assignment title
                     match = eval_df[(eval_df[res_col] == res) & (eval_df[topic_col] == assign_title)]
                     if not match.empty:
                         status = "✅ Submitted"
@@ -491,7 +577,6 @@ def render_assignment_tracker():
         st.info("No assignments currently mapped to residents.")
         return
 
-    # 3. Visual Tracker UI
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Total Assigned Tasks", len(tracker_df))
@@ -502,19 +587,16 @@ def render_assignment_tracker():
         completion_rate = (completed / len(tracker_df)) * 100 if len(tracker_df) > 0 else 0
         st.metric("Program Completion Rate", f"{completion_rate:.1f}%")
 
-    # Filter by resident for a focused RPD view
     selected_res = st.selectbox("Filter by Resident:", ["All Residents"] + residents)
     
     display_df = tracker_df if selected_res == "All Residents" else tracker_df[tracker_df["Resident Name"] == selected_res]
     
     st.dataframe(display_df, use_container_width=True)
 
-    # 4. Pharmacademic Export Function
     st.write("---")
     st.subheader("📥 Export for Pharmacademic")
     st.caption("Generate a CSV report of these assignments to upload into Pharmacademic's document tracking system.")
     
-    # Pharmacademic prefers clean CSVs. We encode to UTF-8 to prevent formatting errors.
     csv_data = display_df.to_csv(index=False).encode('utf-8')
     st.download_button(
         label=f"Download Report ({selected_res})",
@@ -564,7 +646,7 @@ if user_role == "admin":
     with tab2:
         render_evaluation_tool()
         
-    with tab3: # NEW RPD OVERSIGHT TAB
+    with tab3: 
         st.subheader("Today's Active Residents")
         today_all_sched = get_todays_schedule()
         if not today_all_sched.empty:
@@ -574,14 +656,13 @@ if user_role == "admin":
         else:
             st.warning("No scheduled activities found for today.")
     
-    with tab4: # NEW RPD ASSIGNMENT TRACKER TAB
+    with tab4: 
         render_assignment_tracker()
         
 # --- PRECEPTOR VIEW ---
 elif user_role == "preceptor":
     st.title("👨‍🏫 Preceptor Dashboard")
     
-    # NEW PRECEPTOR WIDGET: Daily Visual Schedule
     st.info(f"📅 **Today's Date:** {datetime.date.today().strftime('%B %d, %Y')}")
     today_sched = get_todays_schedule()
     if not today_sched.empty:
@@ -630,7 +711,7 @@ elif user_role == "learner":
     
     tab1, tab2, tab3 = st.tabs(["🎯 Today's Plan", "📚 Curriculum Library", "📅 Schedule & Progress"])
     
-    with tab1: # NEW RESIDENT TAB FOR DAILY OPERATIONS
+    with tab1:
         render_daily_operations(name)
         
         st.write("---")
@@ -642,7 +723,6 @@ elif user_role == "learner":
             rot_sub = str(today_sched.iloc[0]['Subject']).upper()
             possible_cats = curriculum_df['Category / Module'].dropna().unique()
             
-            # Simple keyword matching between the schedule subject and the curriculum module
             matches = [c for c in possible_cats if str(c).upper() in rot_sub or rot_sub in str(c).upper()]
             
             if matches:
@@ -652,10 +732,10 @@ elif user_role == "learner":
                 
         st.caption("👉 Navigate to the **📚 Curriculum Library** tab to access your study guides, videos, and NotebookLM links.")
         
-    with tab2: # FIXED: CURRICULUM PROPERLY RESTORED HERE
+    with tab2:
         render_curriculum(user_role, user_tier)
         
-    with tab3: # FIXED: SCHEDULE MOVED HERE
+    with tab3:
         st.subheader("📅 Upcoming Shifts")
         if not schedule_df.empty:
             my_sched = schedule_df[schedule_df['Resident Name'] == name].head(5)
