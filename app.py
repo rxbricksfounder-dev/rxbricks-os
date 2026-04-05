@@ -309,7 +309,7 @@ def render_evaluation_tool():
     eval_tabs = st.tabs(["⚡ Log Clinical Action", "📚 Evaluate Curriculum Topic"])
     
     # ---------------------------------------------------------
-    # TAB 1: ACTION-ORIENTED EVALUATION (The Multi-Select Fix)
+    # TAB 1: ACTION-ORIENTED EVALUATION (Cascading Dropdowns)
     # ---------------------------------------------------------
     with eval_tabs[0]:
         st.subheader("Action-Oriented Evaluation")
@@ -317,79 +317,89 @@ def render_evaluation_tool():
             st.info("No clinical task mappings available.")
         else:
             clean_tasks = rotation_tasks_df.dropna(subset=['Actionable_Activity'])
-            action_mapping = clean_tasks.groupby('Actionable_Activity')['ASHP_Sub_Objective'].apply(
-                lambda x: [str(item) for item in x if pd.notna(item)]
-            ).to_dict()
             
-            selected_action = st.selectbox("Select Prediction Event / Clinical Action", options=list(action_mapping.keys()), key="eval_action_sel")
+            # 1. Filter by Rotation First to reduce cognitive load
+            all_rotations = sorted(clean_tasks['Rotation_ID'].dropna().unique().tolist())
+            selected_rotation = st.selectbox("1. Select Rotation / Learning Experience", options=all_rotations, key="eval_rotation_sel")
             
-            if selected_action:
-                available_objs = action_mapping.get(selected_action, [])
-                applicable_objectives = st.multiselect(
-                    "Associated ASHP Objectives Satisfied", 
-                    options=available_objs,
-                    default=available_objs,
-                    key="eval_action_multi"
-                )
+            if selected_rotation:
+                # Filter the tasks to only show those belonging to the selected rotation
+                filtered_tasks = clean_tasks[clean_tasks['Rotation_ID'] == selected_rotation]
                 
-                zone_action = st.radio("Entrustment Zone:", [
-                    "Zone 1: Direct Supervision", 
-                    "Zone 2: Proactive Supervision", 
-                    "Zone 3: Reactive Supervision", 
-                    "Zone 4: Independent"
-                ], key="eval_tool_zone_action")
+                action_mapping = filtered_tasks.groupby('Actionable_Activity')['ASHP_Sub_Objective'].apply(
+                    lambda x: [str(item) for item in x if pd.notna(item)]
+                ).to_dict()
                 
-                st.write("---")
-                st.subheader("📝 Pharmacademic Narrative")
+                # 2. Select the specific clinical action from the narrowed-down list
+                selected_action = st.selectbox("2. Select Prediction Event / Clinical Action", options=list(action_mapping.keys()), key="eval_action_sel")
                 
-                if "Zone 1" in zone_action:
-                    zone_narrative = "required direct and continuous supervision"
-                    next_steps = "Future encounters should focus on moving toward proactive supervision."
-                elif "Zone 2" in zone_action:
-                    zone_narrative = "required proactive supervision and routine preceptor review prior to acting"
-                    next_steps = "Future encounters should encourage the resident to execute plans with reactive preceptor availability."
-                elif "Zone 3" in zone_action:
-                    zone_narrative = "performed with reactive supervision, appropriately seeking guidance when clinically necessary"
-                    next_steps = "The resident is progressing excellently; next steps involve pushing for full independence."
-                else:
-                    zone_narrative = "performed completely independently, serving as a reliable and competent practitioner"
-                    next_steps = "The resident has achieved mastery in this area and should continue independent practice."
-                
-                objs_str = "; ".join(applicable_objectives) if applicable_objectives else "general clinical expectations"
-                
-                auto_action_narrative = (
-                    f"Resident {target_res} was evaluated on the clinical action: '{selected_action}'.\n\n"
-                    f"During this encounter, the resident {zone_narrative}.\n\n"
-                    f"This clinical action successfully demonstrated competence toward the following ASHP objectives:\n{objs_str}\n\n"
-                    f"Targeted Next Steps: {next_steps}"
-                )
-                
-                final_action_narrative = st.text_area("Review and edit your evaluation text. (Copy this for Pharmacademic):", value=auto_action_narrative, height=200, key="eval_action_narrative")
-                
-                if st.button("🚀 Log Clinical Action", type="primary", key="eval_action_submit"):
-                    current_date = datetime.date.today().strftime("%Y-%m-%d")
-                    post_url = "https://docs.google.com/forms/d/e/1FAIpQLSe8arpBwEQi2pzFEb7qKC9oag8SN11HEU-_gGN0vQkEWqvlYA/formResponse"
+                if selected_action:
+                    available_objs = action_mapping.get(selected_action, [])
+                    applicable_objectives = st.multiselect(
+                        "Associated ASHP Objectives Satisfied", 
+                        options=available_objs,
+                        default=available_objs,
+                        key="eval_action_multi"
+                    )
                     
-                    logged_objs = " | ".join(applicable_objectives)
+                    zone_action = st.radio("Entrustment Zone:", [
+                        "Zone 1: Direct Supervision", 
+                        "Zone 2: Proactive Supervision", 
+                        "Zone 3: Reactive Supervision", 
+                        "Zone 4: Independent"
+                    ], key="eval_tool_zone_action")
                     
-                    form_data = {
-                        "entry.1175930505": target_res,                            
-                        "entry.137559973": current_date,                           
-                        "entry.597824849": selected_action,                              
-                        "entry.575285059": logged_objs,         
-                        "entry.930508246": "Clinical Action Application",       
-                        "entry.411526759": zone_action                                    
-                    }
+                    st.write("---")
+                    st.subheader("📝 Pharmacademic Narrative")
                     
-                    try:
-                        response = requests.post(post_url, data=form_data)
-                        if response.status_code == 200:
-                            st.success(f"✅ Success! Clinical action for {target_res} securely logged to the Master Database.")
-                            st.balloons()
-                        else:
-                            st.error(f"⚠️ Submission failed with status code: {response.status_code}.")
-                    except Exception as e:
-                        st.error(f"Error connecting to database: {e}")
+                    if "Zone 1" in zone_action:
+                        zone_narrative = "required direct and continuous supervision"
+                        next_steps = "Future encounters should focus on moving toward proactive supervision."
+                    elif "Zone 2" in zone_action:
+                        zone_narrative = "required proactive supervision and routine preceptor review prior to acting"
+                        next_steps = "Future encounters should encourage the resident to execute plans with reactive preceptor availability."
+                    elif "Zone 3" in zone_action:
+                        zone_narrative = "performed with reactive supervision, appropriately seeking guidance when clinically necessary"
+                        next_steps = "The resident is progressing excellently; next steps involve pushing for full independence."
+                    else:
+                        zone_narrative = "performed completely independently, serving as a reliable and competent practitioner"
+                        next_steps = "The resident has achieved mastery in this area and should continue independent practice."
+                    
+                    objs_str = "; ".join(applicable_objectives) if applicable_objectives else "general clinical expectations"
+                    
+                    auto_action_narrative = (
+                        f"Resident {target_res} was evaluated on the clinical action: '{selected_action}' during the '{selected_rotation}' rotation.\n\n"
+                        f"During this encounter, the resident {zone_narrative}.\n\n"
+                        f"This clinical action successfully demonstrated competence toward the following ASHP objectives:\n{objs_str}\n\n"
+                        f"Targeted Next Steps: {next_steps}"
+                    )
+                    
+                    final_action_narrative = st.text_area("Review and edit your evaluation text. (Copy this for Pharmacademic):", value=auto_action_narrative, height=200, key="eval_action_narrative")
+                    
+                    if st.button("🚀 Log Clinical Action", type="primary", key="eval_action_submit"):
+                        current_date = datetime.date.today().strftime("%Y-%m-%d")
+                        post_url = "https://docs.google.com/forms/d/e/1FAIpQLSe8arpBwEQi2pzFEb7qKC9oag8SN11HEU-_gGN0vQkEWqvlYA/formResponse"
+                        
+                        logged_objs = " | ".join(applicable_objectives)
+                        
+                        form_data = {
+                            "entry.1175930505": target_res,                            
+                            "entry.137559973": current_date,                           
+                            "entry.597824849": selected_action,                              
+                            "entry.575285059": logged_objs,         
+                            "entry.930508246": selected_rotation, # Submitting the Rotation instead of a generic string       
+                            "entry.411526759": zone_action                                    
+                        }
+                        
+                        try:
+                            response = requests.post(post_url, data=form_data)
+                            if response.status_code == 200:
+                                st.success(f"✅ Success! Clinical action for {target_res} securely logged to the Master Database.")
+                                st.balloons()
+                            else:
+                                st.error(f"⚠️ Submission failed with status code: {response.status_code}.")
+                        except Exception as e:
+                            st.error(f"Error connecting to database: {e}")
 
     # ---------------------------------------------------------
     # TAB 2: CURRICULUM TOPIC EVALUATION
@@ -477,7 +487,7 @@ def render_evaluation_tool():
                             st.error(f"⚠️ Submission failed with status code: {response.status_code}.")
                     except Exception as e:
                         st.error(f"Error connecting to database: {e}")
-
+                        
 # =========================================================
 # DAILY ACTIVITIES & CLINICAL POLICIES MODULE
 # =========================================================
