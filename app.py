@@ -880,31 +880,53 @@ def render_assignment_tracker():
     )
 
 def log_task_completion(resident_name, task_name, rotation):
-    # 1. Define the necessary Google scopes
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
+    import json
+    import datetime
+    import gspread
+    from google.oauth2.service_account import Credentials
+    import streamlit as st
 
-    # 2. Authenticate using Streamlit secrets (READING RAW JSON)
-    creds_dict = json.loads(st.secrets["raw_google_json"])
-    credentials = Credentials.from_service_account_info(
-        creds_dict,
-        scopes=scopes
-    )
-    
-    # 3. Connect to gspread
-    client = gspread.authorize(credentials)
-    
-    # 4. Open the master sheet and specific tracking tab
-    sheet = client.open("01_MASTER_SHEET_EM").worksheet("Task_Tracking")
-    
-    # 5. Build the row data
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    row_to_insert = [timestamp, resident_name, rotation, task_name, "Completed"]
-    
-    # 6. Append the data to the next available empty row
-    sheet.append_row(row_to_insert)
+    try:
+        # 1. Define scopes
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+
+        # 2. Check for secrets safely
+        if "raw_google_json" in st.secrets:
+            # Try to read the raw text format we set up
+            creds_dict = json.loads(st.secrets["raw_google_json"])
+        elif "gcp_service_account" in st.secrets:
+            # Fallback just in case you went back to the old TOML format
+            creds_dict = dict(st.secrets["gcp_service_account"])
+        else:
+            st.error("🚨 Secret Missing: Streamlit cannot find 'raw_google_json' in your settings.")
+            return
+
+        # 3. Authenticate
+        credentials = Credentials.from_service_account_info(
+            creds_dict,
+            scopes=scopes
+        )
+        client = gspread.authorize(credentials)
+        
+        # 4. Open the sheet
+        try:
+            sheet = client.open("01_MASTER_SHEET_EM").worksheet("Task_Tracking")
+        except gspread.exceptions.SpreadsheetNotFound:
+            st.error("🚨 Access Denied: The Google Sheet was not found. Please make sure you clicked 'Share' on your spreadsheet and added the Service Account email as an Editor!")
+            return
+        
+        # 5. Build and log the data
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        row_to_insert = [timestamp, resident_name, rotation, task_name, "Completed"]
+        sheet.append_row(row_to_insert)
+        
+    except json.JSONDecodeError as e:
+        st.error(f"🚨 JSON Format Error: The text in your Streamlit Secrets box has a typo or missing bracket. Details: {e}")
+    except Exception as e:
+        st.error(f"🚨 System Error: {e}")
 
 # =========================================================
 # DASHBOARDS
