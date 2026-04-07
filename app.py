@@ -289,6 +289,117 @@ def render_step_tracker(resident_name):
     st.markdown(f"**👟 Step Tracker:** `{completed_topics} / {total_topics}` Core Topics Evaluated")
     st.progress(progress_pct)
 
+
+# =========================================================
+# REUSABLE COMPONENT: MILESTONES & PROFILE
+# =========================================================
+def get_milestone_badges(resident_name):
+    """Compares curriculum topics to resident evaluations to find mastered modules."""
+    if curriculum_df.empty or eval_df.empty:
+        return {}
+
+    module_reqs = curriculum_df.groupby('Category / Module')['Topic'].nunique().to_dict()
+    res_evals = eval_df[eval_df['Resident Name'] == resident_name]
+    
+    topic_col = 'Activity' if 'Activity' in res_evals.columns else ('Topic' if 'Topic' in res_evals.columns else None)
+    completed_topics = res_evals[topic_col].unique().tolist() if topic_col else []
+
+    badges = {}
+    for module, total_required in module_reqs.items():
+        module_topics = curriculum_df[curriculum_df['Category / Module'] == module]['Topic'].unique().tolist()
+        completed_in_module = [t for t in module_topics if t in completed_topics]
+        is_complete = len(completed_in_module) >= total_required
+        
+        badges[module] = {
+            "total": total_required,
+            "completed": len(completed_in_module),
+            "is_complete": is_complete
+        }
+    return badges
+
+def render_resident_profile(resident_name, is_preceptor_view=False):
+    st.header(f"🎓 Professional Profile: {resident_name}")
+    
+    col_img, col_info = st.columns([1, 3])
+    with col_img:
+        st.image("https://cdn-icons-png.flaticon.com/512/387/387561.png", width=120) 
+        
+    with col_info:
+        st.subheader("Clinical Pharmacy Resident")
+        st.write("**Program:** Emergency Medicine PGY2")
+        render_step_tracker(resident_name)
+
+    st.divider()
+
+    st.subheader("🏆 Clinical Milestones")
+    badges = get_milestone_badges(resident_name)
+    
+    if not badges:
+        st.info("No milestone data available yet.")
+    else:
+        completed_modules = {k: v for k, v in badges.items() if v["is_complete"]}
+        in_progress_modules = {k: v for k, v in badges.items() if not v["is_complete"]}
+        
+        if completed_modules:
+            st.success(f"**Achieved {len(completed_modules)} Module Certifications!**")
+            badge_cols = st.columns(4)
+            for idx, (module, data) in enumerate(completed_modules.items()):
+                with badge_cols[idx % 4]:
+                    st.markdown(f"""
+                    <div style="text-align: center; padding: 10px; border: 1px solid #4CAF50; border-radius: 10px; background-color: #f1f8e9; color: black; margin-bottom: 10px;">
+                        <h2 style="margin: 0;">🏅</h2>
+                        <strong>{module}</strong><br>
+                        <small>Mastered</small>
+                    </div>
+                    """, unsafe_allow_html=True)
+        else:
+            st.caption("Complete all topics in a module to earn a milestone badge!")
+
+        if in_progress_modules:
+            with st.expander("View Module Progress Details", expanded=not bool(completed_modules)):
+                for module, data in in_progress_modules.items():
+                    progress = data['completed'] / data['total'] if data['total'] > 0 else 0
+                    st.write(f"**{module}** ({data['completed']}/{data['total']} topics)")
+                    st.progress(progress)
+
+    st.divider()
+
+    if is_preceptor_view:
+        st.subheader("📋 Academic & Professional Record")
+        st.caption("Official log of clinical competencies for residency accreditation review.")
+        res_evals = eval_df[eval_df['Resident Name'] == resident_name]
+        if not res_evals.empty:
+            st.dataframe(res_evals, use_container_width=True)
+        else:
+            st.info("No formal evaluations on record yet.")
+    else:
+        st.subheader("📄 Automated CV Builder")
+        st.caption("Copy this formatted text to update your curriculum vitae with your latest clinical achievements.")
+        
+        cv_text = f"### Core Competencies & Completed Modules\n"
+        if completed_modules:
+            for module in completed_modules.keys():
+                cv_text += f"- **{module}:** Demonstrated independent clinical competence across all targeted therapeutic topics.\n"
+        else:
+            cv_text += "- *Modules currently in progress.*\n"
+            
+        cv_text += "\n### Advanced Clinical Actions\n"
+        res_evals = eval_df[eval_df['Resident Name'] == resident_name]
+        
+        action_col = 'Activity' if 'Activity' in res_evals.columns else ('Topic' if 'Topic' in res_evals.columns else None)
+        if action_col and not res_evals.empty:
+            actions = res_evals[action_col].dropna().unique()
+            if len(actions) > 0:
+                for action in actions[:10]:
+                    cv_text += f"- Successfully evaluated on: {action}\n"
+                if len(actions) > 10:
+                    cv_text += f"- ...and {len(actions)-10} additional clinical competencies.\n"
+        else:
+            cv_text += "- *Awaiting evaluated actions.*\n"
+                
+        st.text_area("Your CV Export:", value=cv_text, height=250)
+
+
 # =========================================================
 # REUSABLE COMPONENT: EVALUATION TOOL
 # =========================================================
@@ -763,7 +874,7 @@ def render_assignment_tracker():
 # --- ADMIN VIEW (RPD) ---
 if user_role == "admin":
     st.title("📈 Program Director Dashboard")
-    tab1, tab2, tab3, tab4 = st.tabs(["📊 Reports & Progress", "👨‍🏫 Submit Evaluation", "📅 Daily Operations", "📋 Assignment Tracker"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Reports & Progress", "👨‍🏫 Submit Evaluation", "📅 Daily Operations", "📋 Assignment Tracker", "🎓 Academic Records"])
     
     with tab1:
         st.subheader("Resident Assignment Tracking")
@@ -808,6 +919,15 @@ if user_role == "admin":
     
     with tab4: 
         render_assignment_tracker()
+
+    with tab5:
+        st.subheader("Resident Academic Records")
+        res_names = users_df[users_df['Role'].str.upper() == 'RESIDENT']['Name'].tolist()
+        if res_names:
+            target_res = st.selectbox("Select Resident Record:", res_names, key="admin_profile_res")
+            render_resident_profile(target_res, is_preceptor_view=True)
+        else:
+            st.warning("No residents found in the system.")
         
 # --- PRECEPTOR VIEW ---
 elif user_role == "preceptor":
@@ -822,7 +942,7 @@ elif user_role == "preceptor":
         st.caption("No residents are scheduled for clinical shifts today.")
     st.write("---")
 
-    tab1, tab2, tab3 = st.tabs(["👨‍🏫 Evaluate Resident", "📈 Resident Status", "📚 Curriculum Library"])
+    tab1, tab2, tab3, tab4 = st.tabs(["👨‍🏫 Evaluate Resident", "📈 Resident Status", "📚 Curriculum Library", "🎓 Academic Records"])
    
     with tab1:
             render_evaluation_tool()
@@ -852,6 +972,15 @@ elif user_role == "preceptor":
     with tab3:
         render_curriculum(user_role, user_tier)
 
+    with tab4:
+        st.subheader("Resident Academic Records")
+        res_names = users_df[users_df['Role'].str.upper() == 'RESIDENT']['Name'].tolist()
+        if res_names:
+            target_res = st.selectbox("Select Resident Record:", res_names, key="prec_profile_res")
+            render_resident_profile(target_res, is_preceptor_view=True)
+        else:
+            st.warning("No residents found in the system.")
+
 # --- RESIDENT/LEARNER VIEW ---
 elif user_role == "learner":
     st.title(f"Welcome, {name}!")
@@ -859,7 +988,7 @@ elif user_role == "learner":
     render_step_tracker(name)
     st.write("---")
     
-    tab1, tab2, tab3 = st.tabs(["🎯 Today's Plan", "📚 Curriculum Library", "📅 Schedule & Progress"])
+    tab1, tab2, tab3, tab4 = st.tabs(["🎯 Today's Plan", "📚 Curriculum Library", "📅 Schedule & Progress", "🎓 Profile & CV"])
     
     with tab1:
         render_daily_operations(name, user_role)
@@ -913,3 +1042,6 @@ elif user_role == "learner":
                 st.info("No evaluation data found yet.")
         else:
             st.info("No evaluation data found yet.")
+
+    with tab4:
+        render_resident_profile(name, is_preceptor_view=False)
