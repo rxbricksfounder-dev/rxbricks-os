@@ -1,5 +1,7 @@
 streamlit
 pandas
-requests
 streamlit-authenticator
 bcrypt
+requests
+gspread
+google-auth
