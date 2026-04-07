@@ -8,7 +8,6 @@ import bcrypt
 import streamlit.components.v1 as components
 import gspread
 from google.oauth2.service_account import Credentials
-from datetime import datetime
 
 # =========================================================
 # UI TRANSLATION DICTIONARY (ASHP to Clinical Role)
@@ -890,7 +889,7 @@ def log_task_completion(resident_name, task_name, rotation):
     sheet = client.open("01_MASTER_SHEET_EM").worksheet("Task_Tracking")
     
     # 5. Build the row data
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     row_to_insert = [timestamp, resident_name, rotation, task_name, "Completed"]
     
     # 6. Append the data to the next available empty row
