@@ -502,7 +502,7 @@ def get_todays_schedule(target_name=None):
         today_sched = today_sched[today_sched['Resident Name'] == target_name]
     return today_sched
 
-def render_daily_operations(resident_name):
+def render_daily_operations(resident_name, current_role):
     st.subheader("🎯 Today's Clinical Policies & Activities")
     
     today_sched = get_todays_schedule(resident_name)
@@ -519,56 +519,91 @@ def render_daily_operations(resident_name):
     if daily_tasks.empty:
         st.warning(f"No task mappings found for {rotation_subject}.")
         return
-        
-    # --- DYNAMIC DICTIONARY MAPPING (Grouped by Action to Prevent Duplicate Checkboxes) ---
-    grouped_tasks = {}
-    
-    action_group = daily_tasks.groupby('Actionable_Activity')
-    
-    for action_text, group in action_group:
-        sub_objs = group['ASHP_Sub_Objective'].dropna().astype(str).tolist()
-        
-        primary_sub_obj = sub_objs[0] if sub_objs else ""
-        objective_code = primary_sub_obj.replace('"', '').strip().split(' ')[0] if primary_sub_obj else "ROTATION_EXPECTATION"
-            
-        mapping_data = ASHP_TO_CLINICAL_ROLE.get(objective_code, {
-            "role_name": "General Clinical Task",
-            "ui_header": "### 📋 General Clinical Tasks",
-            "description": "General clinical expectation."
-        })
-        
-        header = mapping_data['ui_header']
-        
-        if header not in grouped_tasks:
-            grouped_tasks[header] = []
-            
-        target_level = str(group['Action_Verb'].iloc[0]) if 'Action_Verb' in group.columns else 'General Target'
-        
-        # Combine the objective codes for display so the resident sees all satisfied targets
-        obj_codes_display = ", ".join([str(x).replace('"', '').strip().split(' ')[0] for x in sub_objs if pd.notna(x)])
-        
-        grouped_tasks[header].append({
-            "activity": action_text,
-            "codes": obj_codes_display,
-            "target": target_level,
-            "idx": group.index[0] 
-        })
 
-    # --- UI RENDERING ---
-    for header, tasks in grouped_tasks.items():
-        st.write("---")
-        task_count = len(tasks)
-        role_title = header.replace('### ', '')
+    # =========================================================
+    # THE "HOW" - LEARNER/RESIDENT VIEW
+    # =========================================================
+    if current_role == "learner":
+        st.info("💡 **Clinical Application Focus:** Below are the policies relevant to today's shift and *how* they connect to your core residency objectives.")
         
-        with st.expander(f"{role_title} ({task_count} unique tasks)", expanded=True):
-            with st.container(height=400, border=False):
-                for task in tasks:
-                    checkbox_key = f"{resident_name}_{rotation_subject}_{task['idx']}"
-                    
-                    st.checkbox(
-                        f"**[{task['codes']}]** {task['activity']} *(Target: {task['target']})*", 
-                        key=checkbox_key
-                    )
+        for idx, row in daily_tasks.iterrows():
+            action_text = row.get('Actionable_Activity', 'General Clinical Action')
+            policy_name = row.get('Clinical_Policy', 'Standard Clinical Guidelines')
+            policy_link = row.get('Policy_Link', '')
+            sub_obj = str(row.get('ASHP_Sub_Objective', ''))
+            action_verb = row.get('Action_Verb', 'execute')
+            
+            # Extract objective code for the dictionary lookup
+            obj_code = sub_obj.replace('"', '').strip().split(' ')[0] if sub_obj and sub_obj != "nan" else "ROTATION_EXPECTATION"
+            mapping_data = ASHP_TO_CLINICAL_ROLE.get(obj_code, {
+                "role_name": "General Clinical Task",
+                "ui_header": "### 📋 General Clinical Tasks",
+                "description": "General clinical expectation."
+            })
+
+            # Check for NaN in the new columns
+            display_policy = policy_name if pd.notna(policy_name) and policy_name != "nan" else "Standard Departmental Policy"
+            
+            with st.expander(f"📘 Policy Focus: {display_policy}", expanded=True):
+                st.markdown(f"**The Objective:** `{obj_code}` — {mapping_data['description']}")
+                
+                # Re-framing into the "How"
+                st.markdown(f"**The 'How':** To successfully target the *{action_verb.lower()}* level of competence today, you will utilize the **{display_policy}** to guide your approach to:  \n> *\"{action_text}\"*")
+                
+                col1, col2 = st.columns([1, 2])
+                with col1:
+                    if pd.notna(policy_link) and str(policy_link).strip() != "" and str(policy_link) != "nan":
+                        st.link_button(f"🔗 Review Policy", str(policy_link), type="primary", use_container_width=True)
+                    else:
+                        st.caption("No specific external link provided.")
+                with col2:
+                    st.checkbox(f"I understand how this policy applies to {obj_code}", key=f"ack_{resident_name}_{rotation_subject}_{idx}")
+
+    # =========================================================
+    # THE "WHAT" - PRECEPTOR / RPD VIEW (Preserved Checklists)
+    # =========================================================
+    else:
+        grouped_tasks = {}
+        action_group = daily_tasks.groupby('Actionable_Activity')
+        
+        for action_text, group in action_group:
+            sub_objs = group['ASHP_Sub_Objective'].dropna().astype(str).tolist()
+            primary_sub_obj = sub_objs[0] if sub_objs else ""
+            objective_code = primary_sub_obj.replace('"', '').strip().split(' ')[0] if primary_sub_obj else "ROTATION_EXPECTATION"
+                
+            mapping_data = ASHP_TO_CLINICAL_ROLE.get(objective_code, {
+                "role_name": "General Clinical Task",
+                "ui_header": "### 📋 General Clinical Tasks",
+                "description": "General clinical expectation."
+            })
+            
+            header = mapping_data['ui_header']
+            if header not in grouped_tasks:
+                grouped_tasks[header] = []
+                
+            target_level = str(group['Action_Verb'].iloc[0]) if 'Action_Verb' in group.columns else 'General Target'
+            obj_codes_display = ", ".join([str(x).replace('"', '').strip().split(' ')[0] for x in sub_objs if pd.notna(x)])
+            
+            grouped_tasks[header].append({
+                "activity": action_text,
+                "codes": obj_codes_display,
+                "target": target_level,
+                "idx": group.index[0] 
+            })
+
+        for header, tasks in grouped_tasks.items():
+            st.write("---")
+            task_count = len(tasks)
+            role_title = header.replace('### ', '')
+            
+            with st.expander(f"{role_title} ({task_count} unique tasks)", expanded=True):
+                with st.container(height=400, border=False):
+                    for task in tasks:
+                        checkbox_key = f"{resident_name}_{rotation_subject}_{task['idx']}"
+                        st.checkbox(
+                            f"**[{task['codes']}]** {task['activity']} *(Target: {task['target']})*", 
+                            key=checkbox_key
+                        )
 
 
 def render_assignments(resident_name):
@@ -804,7 +839,7 @@ elif user_role == "learner":
     tab1, tab2, tab3 = st.tabs(["🎯 Today's Plan", "📚 Curriculum Library", "📅 Schedule & Progress"])
     
     with tab1:
-        render_daily_operations(name)
+        render_daily_operations(name, user_role)
         
         st.write("---")
         render_assignments(name)
