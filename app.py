@@ -1045,14 +1045,6 @@ elif user_role == "learner":
                 st.success(f"**Curriculum Match!** Based on your shift ({rot_sub}), we recommend reviewing topics in the **{matches[0]}** module today.")
             else:
                 st.info(f"You are scheduled for **{rot_sub}**. Check the Curriculum Library for related self-directed study.")
-
-        # Assuming this is inside the loop generating the resident's daily tasks
-        if st.button(f"Mark '{policy_name}' Complete", key=f"complete_{policy_name}"):
-            try:
-                log_task_completion(name, policy_name, "CORE - EM") # Pass the actual rotation variable here
-                st.success(f"Successfully logged completion for {policy_name}!")
-            except Exception as e:
-                st.error(f"Error logging task: {e}")
         
         st.caption("👉 Navigate to the **📚 Curriculum Library** tab to access your study guides, videos, and NotebookLM links.")
         
