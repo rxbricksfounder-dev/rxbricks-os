@@ -641,16 +641,12 @@ def render_daily_operations(resident_name, current_role):
     if current_role == "learner":
         st.info("💡 **Today's Focus:** Review your daily operational tasks below. Click 'Policy & Application Details' to see how each task connects to your core residency objectives.")
         
-        # 1. The Toggle switch (defaults to off/False to keep the view clean)
         show_all_tasks = st.toggle("View all available rotation tasks", value=False)
         
-        # 2. Stable Daily Randomization
-        # Creates a unique, stable seed integer for today so the tasks don't shuffle on every page reload
         today_str = datetime.date.today().isoformat()
         seed_string = f"{resident_name}_{rotation_subject}_{today_str}"
         daily_seed = zlib.crc32(seed_string.encode())
         
-        # 3. Filter the task list to 5 items unless the toggle is flipped
         if not show_all_tasks and len(daily_tasks) > 5:
             display_tasks = daily_tasks.sample(n=5, random_state=daily_seed)
             st.caption("🔄 *Showing 5 selected focus tasks for today to optimize learning. Toggle above to see the complete list.*")
@@ -659,7 +655,6 @@ def render_daily_operations(resident_name, current_role):
             if len(daily_tasks) > 5:
                 st.caption("⚠️ *Viewing full rotation task list.*")
         
-        # 4. Render the tasks
         for idx, row in display_tasks.iterrows():
             action_text = row.get('Actionable_Activity', 'General Clinical Action')
             policy_name = row.get('Clinical_Policy', 'Standard Clinical Guidelines')
@@ -667,20 +662,16 @@ def render_daily_operations(resident_name, current_role):
             sub_obj = str(row.get('ASHP_Sub_Objective', ''))
             action_verb = row.get('Action_Verb', 'execute')
             
-            # Extract objective code for the dictionary lookup
             obj_code = sub_obj.replace('"', '').strip().split(' ')[0] if sub_obj and sub_obj != "nan" else "ROTATION_EXPECTATION"
             mapping_data = ASHP_TO_CLINICAL_ROLE.get(obj_code, {
                 "role_name": "General Clinical Task",
                 "description": "General clinical expectation."
             })
 
-            # Check for NaN in the new columns
             display_policy = policy_name if pd.notna(policy_name) and policy_name != "nan" else "Standard Departmental Policy"
             
-            # Scannable Top-Level Task
             st.markdown(f"#### 🎯 {action_text}")
             
-            # The "How" and "Why" hidden one click away
             with st.expander(f"📘 Policy & Application Details: {display_policy}", expanded=False):
                 st.markdown(f"**Objective `{obj_code}`:** {mapping_data['description']}")
                 st.markdown(f"**Application:** To target the *{action_verb.lower()}* level of competence today, utilize this policy to guide your approach.")
@@ -693,9 +684,9 @@ def render_daily_operations(resident_name, current_role):
                         st.caption("No specific external link provided.")
                 with col2:
                     st.checkbox(f"I understand how this policy applies.", key=f"ack_{resident_name}_{rotation_subject}_{idx}")
-
+                
+                # --- The Button is properly nested here ---
                 if st.button(f"Mark '{display_policy}' Complete", key=f"complete_btn_{resident_name}_{rotation_subject}_{idx}"):
-                    # Now it checks if the function returned True before showing success
                     is_successful = log_task_completion(resident_name, display_policy, rotation_subject) 
                     if is_successful:
                         st.success(f"Successfully logged completion for {display_policy}!")
@@ -747,7 +738,6 @@ def render_daily_operations(resident_name, current_role):
                             f"**[{task['codes']}]** {task['activity']} *(Target: {task['target']})*", 
                             key=checkbox_key
                         )
-
 
 def render_assignments(resident_name):
     st.subheader("📝 Pending Assignments & Tasks")
