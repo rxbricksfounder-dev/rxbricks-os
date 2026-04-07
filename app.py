@@ -6,6 +6,9 @@ import pandas as pd
 import streamlit_authenticator as stauth
 import bcrypt
 import streamlit.components.v1 as components
+import gspread
+from google.oauth2.service_account import Credentials
+from datetime import datetime
 
 # =========================================================
 # UI TRANSLATION DICTIONARY (ASHP to Clinical Role)
@@ -867,6 +870,32 @@ def render_assignment_tracker():
         type="primary"
     )
 
+def log_task_completion(resident_name, task_name, rotation):
+    # 1. Define the necessary Google scopes
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+
+    # 2. Authenticate using Streamlit secrets
+    credentials = Credentials.from_service_account_info(
+        st.secrets["gcp_service_account"],
+        scopes=scopes
+    )
+    
+    # 3. Connect to gspread
+    client = gspread.authorize(credentials)
+    
+    # 4. Open the master sheet and specific tracking tab
+    sheet = client.open("01_MASTER_SHEET_EM").worksheet("Task_Tracking")
+    
+    # 5. Build the row data
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    row_to_insert = [timestamp, resident_name, rotation, task_name, "Completed"]
+    
+    # 6. Append the data to the next available empty row
+    sheet.append_row(row_to_insert)
+
 # =========================================================
 # DASHBOARDS
 # =========================================================
@@ -1008,7 +1037,15 @@ elif user_role == "learner":
                 st.success(f"**Curriculum Match!** Based on your shift ({rot_sub}), we recommend reviewing topics in the **{matches[0]}** module today.")
             else:
                 st.info(f"You are scheduled for **{rot_sub}**. Check the Curriculum Library for related self-directed study.")
-                
+
+        # Assuming this is inside the loop generating the resident's daily tasks
+        if st.button(f"Mark '{policy_name}' Complete", key=f"complete_{policy_name}"):
+            try:
+                log_task_completion(name, policy_name, "CORE - EM") # Pass the actual rotation variable here
+                st.success(f"Successfully logged completion for {policy_name}!")
+            except Exception as e:
+                st.error(f"Error logging task: {e}")
+        
         st.caption("👉 Navigate to the **📚 Curriculum Library** tab to access your study guides, videos, and NotebookLM links.")
         
     with tab2:
