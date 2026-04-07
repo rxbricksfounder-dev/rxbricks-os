@@ -692,6 +692,15 @@ def render_daily_operations(resident_name, current_role):
                         st.caption("No specific external link provided.")
                 with col2:
                     st.checkbox(f"I understand how this policy applies.", key=f"ack_{resident_name}_{rotation_subject}_{idx}")
+                
+                # --- MOVED AND UPDATED LOGIC ---
+                if st.button(f"Mark '{display_policy}' Complete", key=f"complete_btn_{resident_name}_{rotation_subject}_{idx}"):
+                    try:
+                        # Passes the actual rotation_subject from the loop instead of a hardcoded string
+                        log_task_completion(resident_name, display_policy, rotation_subject) 
+                        st.success(f"Successfully logged completion for {display_policy}!")
+                    except Exception as e:
+                        st.error(f"Error logging task: {e}")
             
             st.divider()
 
