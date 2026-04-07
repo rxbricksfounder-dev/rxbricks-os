@@ -685,7 +685,6 @@ def render_daily_operations(resident_name, current_role):
                 with col2:
                     st.checkbox(f"I understand how this policy applies.", key=f"ack_{resident_name}_{rotation_subject}_{idx}")
                 
-                # --- The Button is properly nested here ---
                 if st.button(f"Mark '{display_policy}' Complete", key=f"complete_btn_{resident_name}_{rotation_subject}_{idx}"):
                     is_successful = log_task_completion(resident_name, display_policy, rotation_subject) 
                     if is_successful:
@@ -738,6 +737,7 @@ def render_daily_operations(resident_name, current_role):
                             f"**[{task['codes']}]** {task['activity']} *(Target: {task['target']})*", 
                             key=checkbox_key
                         )
+
 
 def render_assignments(resident_name):
     st.subheader("📝 Pending Assignments & Tasks")
@@ -880,7 +880,7 @@ def log_task_completion(resident_name, task_name, rotation):
             creds_dict = json.loads(st.secrets["raw_google_json"])
         else:
             st.error("🚨 Secret Missing: Streamlit cannot find 'raw_google_json' in your settings.")
-            return False # <--- ADDED THIS
+            return False 
 
         credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client = gspread.authorize(credentials)
@@ -889,17 +889,17 @@ def log_task_completion(resident_name, task_name, rotation):
             sheet = client.open("01_MASTER_SHEET_EM").worksheet("Task_Tracking")
         except gspread.exceptions.SpreadsheetNotFound:
             st.error("🚨 Access Denied: The Google Sheet was not found. Please make sure you shared it!")
-            return False # <--- ADDED THIS
+            return False 
         
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         row_to_insert = [timestamp, resident_name, rotation, task_name, "Completed"]
         sheet.append_row(row_to_insert)
         
-        return True # <--- ADDED THIS (Means it succeeded!)
+        return True 
         
     except Exception as e:
         st.error(f"🚨 System Error: {e}")
-        return False # <--- ADDED THIS
+        return False 
 
 # =========================================================
 # DASHBOARDS
@@ -1025,7 +1025,7 @@ elif user_role == "learner":
     tab1, tab2, tab3, tab4 = st.tabs(["🎯 Today's Plan", "📚 Curriculum Library", "📅 Schedule & Progress", "🎓 Profile & CV"])
     
     with tab1:
-        (name, user_role)
+        render_daily_operations(name, user_role)
         
         st.write("---")
         render_assignments(name)
