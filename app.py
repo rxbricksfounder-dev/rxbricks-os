@@ -1,4 +1,5 @@
 import zlib
+import json
 import requests
 import datetime
 import streamlit as st
@@ -885,9 +886,10 @@ def log_task_completion(resident_name, task_name, rotation):
         "https://www.googleapis.com/auth/drive"
     ]
 
-    # 2. Authenticate using Streamlit secrets
+    # 2. Authenticate using Streamlit secrets (READING RAW JSON)
+    creds_dict = json.loads(st.secrets["raw_google_json"])
     credentials = Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
+        creds_dict,
         scopes=scopes
     )
     
