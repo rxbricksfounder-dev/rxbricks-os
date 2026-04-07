@@ -523,8 +523,11 @@ def render_daily_operations(resident_name, current_role):
     # =========================================================
     # THE "HOW" - LEARNER/RESIDENT VIEW
     # =========================================================
+    # =========================================================
+    # THE "HOW" - LEARNER/RESIDENT VIEW (Streamlined)
+    # =========================================================
     if current_role == "learner":
-        st.info("💡 **Clinical Application Focus:** Below are the policies relevant to today's shift and *how* they connect to your core residency objectives.")
+        st.info("💡 **Today's Focus:** Review your operational tasks below. Click 'Policy & Application Details' to see how each task connects to your core residency objectives.")
         
         for idx, row in daily_tasks.iterrows():
             action_text = row.get('Actionable_Activity', 'General Clinical Action')
@@ -537,18 +540,19 @@ def render_daily_operations(resident_name, current_role):
             obj_code = sub_obj.replace('"', '').strip().split(' ')[0] if sub_obj and sub_obj != "nan" else "ROTATION_EXPECTATION"
             mapping_data = ASHP_TO_CLINICAL_ROLE.get(obj_code, {
                 "role_name": "General Clinical Task",
-                "ui_header": "### 📋 General Clinical Tasks",
                 "description": "General clinical expectation."
             })
 
             # Check for NaN in the new columns
             display_policy = policy_name if pd.notna(policy_name) and policy_name != "nan" else "Standard Departmental Policy"
             
-            with st.expander(f"📘 Policy Focus: {display_policy}", expanded=True):
-                st.markdown(f"**The Objective:** `{obj_code}` — {mapping_data['description']}")
-                
-                # Re-framing into the "How"
-                st.markdown(f"**The 'How':** To successfully target the *{action_verb.lower()}* level of competence today, you will utilize the **{display_policy}** to guide your approach to:  \n> *\"{action_text}\"*")
+            # 1. Scannable Top-Level Task
+            st.markdown(f"#### 🎯 {action_text}")
+            
+            # 2. The "How" and "Why" hidden one click away
+            with st.expander(f"📘 Policy & Application Details: {display_policy}", expanded=False):
+                st.markdown(f"**Objective `{obj_code}`:** {mapping_data['description']}")
+                st.markdown(f"**Application:** To target the *{action_verb.lower()}* level of competence today, utilize this policy to guide your approach.")
                 
                 col1, col2 = st.columns([1, 2])
                 with col1:
@@ -557,7 +561,10 @@ def render_daily_operations(resident_name, current_role):
                     else:
                         st.caption("No specific external link provided.")
                 with col2:
-                    st.checkbox(f"I understand how this policy applies to {obj_code}", key=f"ack_{resident_name}_{rotation_subject}_{idx}")
+                    st.checkbox(f"I understand how this policy applies.", key=f"ack_{resident_name}_{rotation_subject}_{idx}")
+            
+            # 3. Clean visual break
+            st.divider()
 
     # =========================================================
     # THE "WHAT" - PRECEPTOR / RPD VIEW (Preserved Checklists)
