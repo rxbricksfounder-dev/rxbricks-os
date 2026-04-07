@@ -693,15 +693,12 @@ def render_daily_operations(resident_name, current_role):
                         st.caption("No specific external link provided.")
                 with col2:
                     st.checkbox(f"I understand how this policy applies.", key=f"ack_{resident_name}_{rotation_subject}_{idx}")
-                
-                # --- MOVED AND UPDATED LOGIC ---
+
                 if st.button(f"Mark '{display_policy}' Complete", key=f"complete_btn_{resident_name}_{rotation_subject}_{idx}"):
-                    try:
-                        # Passes the actual rotation_subject from the loop instead of a hardcoded string
-                        log_task_completion(resident_name, display_policy, rotation_subject) 
+                    # Now it checks if the function returned True before showing success
+                    is_successful = log_task_completion(resident_name, display_policy, rotation_subject) 
+                    if is_successful:
                         st.success(f"Successfully logged completion for {display_policy}!")
-                    except Exception as e:
-                        st.error(f"Error logging task: {e}")
             
             st.divider()
 
@@ -887,46 +884,32 @@ def log_task_completion(resident_name, task_name, rotation):
     import streamlit as st
 
     try:
-        # 1. Define scopes
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
+        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
-        # 2. Check for secrets safely
         if "raw_google_json" in st.secrets:
-            # Try to read the raw text format we set up
             creds_dict = json.loads(st.secrets["raw_google_json"])
-        elif "gcp_service_account" in st.secrets:
-            # Fallback just in case you went back to the old TOML format
-            creds_dict = dict(st.secrets["gcp_service_account"])
         else:
             st.error("🚨 Secret Missing: Streamlit cannot find 'raw_google_json' in your settings.")
-            return
+            return False # <--- ADDED THIS
 
-        # 3. Authenticate
-        credentials = Credentials.from_service_account_info(
-            creds_dict,
-            scopes=scopes
-        )
+        credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         client = gspread.authorize(credentials)
         
-        # 4. Open the sheet
         try:
             sheet = client.open("01_MASTER_SHEET_EM").worksheet("Task_Tracking")
         except gspread.exceptions.SpreadsheetNotFound:
-            st.error("🚨 Access Denied: The Google Sheet was not found. Please make sure you clicked 'Share' on your spreadsheet and added the Service Account email as an Editor!")
-            return
+            st.error("🚨 Access Denied: The Google Sheet was not found. Please make sure you shared it!")
+            return False # <--- ADDED THIS
         
-        # 5. Build and log the data
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         row_to_insert = [timestamp, resident_name, rotation, task_name, "Completed"]
         sheet.append_row(row_to_insert)
         
-    except json.JSONDecodeError as e:
-        st.error(f"🚨 JSON Format Error: The text in your Streamlit Secrets box has a typo or missing bracket. Details: {e}")
+        return True # <--- ADDED THIS (Means it succeeded!)
+        
     except Exception as e:
         st.error(f"🚨 System Error: {e}")
+        return False # <--- ADDED THIS
 
 # =========================================================
 # DASHBOARDS
@@ -1052,7 +1035,7 @@ elif user_role == "learner":
     tab1, tab2, tab3, tab4 = st.tabs(["🎯 Today's Plan", "📚 Curriculum Library", "📅 Schedule & Progress", "🎓 Profile & CV"])
     
     with tab1:
-        render_daily_operations(name, user_role)
+        (name, user_role)
         
         st.write("---")
         render_assignments(name)
