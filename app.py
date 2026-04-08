@@ -42,14 +42,14 @@ def log_evaluation_to_sheet(preceptor, resident, rotation, objective, criteria, 
         return False
 
 # ==========================================\
-# 2. AI QUALITY GATE FUNCTION
+# 2. AI QUALITY GATE FUNCTION (UPGRADED TO 2.5 FLASH)
 # ==========================================\
 def analyze_evaluation_quality(dictated_text, ashp_objective):
     # Ensure genai is configured with your API key from secrets
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
     
-    # We use gemini-1.5-flash (or 2.5 if available in your env)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # UPGRADE: Now using 2.5-flash for speed and native JSON support
+    model = genai.GenerativeModel('gemini-2.5-flash')
     
     prompt = f"""
     You are an expert Pharmacy Residency Program Director evaluating a preceptor's dictated log. 
@@ -61,10 +61,10 @@ def analyze_evaluation_quality(dictated_text, ashp_objective):
     * Red (Deficient): Too brief, lacks clinical specifics, or provides no actionable feedback.
     
     Output Requirements:
-    Return ONLY a strict JSON object with exactly three keys (do not wrap in markdown blocks):
-    1. "grade": String ("Green", "Yellow", or "Red").
-    2. "feedback": String (1-2 sentences of direct coaching explaining *why* it received that grade).
-    3. "suggested_rewrite": String. If Yellow or Red, provide a rewritten version that would score Green. If Green, provide a final, polished version of the text ready to be pasted into PharmAcademic.
+    Return ONLY a JSON object with exactly three keys:
+    "grade": String ("Green", "Yellow", or "Red").
+    "feedback": String (1-2 sentences of direct coaching explaining *why* it received that grade).
+    "suggested_rewrite": String. If Yellow or Red, provide a rewritten version that would score Green. If Green, provide a final, polished version of the text ready to be pasted into PharmAcademic.
     
     ASHP Objective Being Evaluated: {ashp_objective}
     Preceptor's Dictated Text:
@@ -72,10 +72,12 @@ def analyze_evaluation_quality(dictated_text, ashp_objective):
     """
     
     try:
-        response = model.generate_content(prompt)
-        # Clean the response to ensure we only parse the JSON
-        response_text = response.text.strip().replace("```json", "").replace("```", "")
-        return json.loads(response_text)
+        # UPGRADE: Using GenerationConfig to force strict, perfect JSON output
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(response_mime_type="application/json")
+        )
+        return json.loads(response.text)
     except Exception as e:
         return {"grade": "Error", "feedback": f"AI Parsing Error: {str(e)}", "suggested_rewrite": ""}
 # ==========================================
