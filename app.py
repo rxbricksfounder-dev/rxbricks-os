@@ -177,6 +177,38 @@ def generate_admin_document(doc_type, raw_notes, context=""):
         st.error(f"AI Generation Failed: {e}")
         return None
 
+# ==========================================\
+# 3. AI GAP ANALYSIS ENGINE (RPD AUDIT)
+# ==========================================\
+def run_gap_analysis(standard_name, evaluation_data_subset):
+    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"]) # Or GEMINI_API_KEY based on your setup
+    model = genai.GenerativeModel('gemini-2.5-flash')
+    
+    # We combine all the narratives for this standard into one giant text block for the AI to read
+    combined_narratives = "\n---\n".join(evaluation_data_subset['Overall Narrative'].dropna().astype(str).tolist())
+    
+    prompt = f"""
+    You are an expert ASHP Lead Surveyor auditing a Pharmacy Residency Program.
+    Review the following preceptor evaluations submitted for the standard: {standard_name}.
+    
+    Your goal is to identify gaps in the residents' clinical exposure and recommend actionable steps for the Program Director.
+    
+    Output Requirements:
+    Return a professional, markdown-formatted report with the following sections:
+    1. **Current Strengths:** A brief summary of what the program is doing well regarding this standard.
+    2. **Identified Gaps:** Specific clinical areas, patient populations, or entrustment levels that are missing from these evaluations.
+    3. **Actionable Recommendations:** 2-3 specific things the RPD should assign or focus on next week to close these gaps.
+    
+    Raw Evaluation Data:
+    {combined_narratives}
+    """
+    
+    try:
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"Error running AI Audit: {str(e)}"
+
 # ==========================================
 # 3. THE BACKEND READ FUNCTION (STEP COUNTER)
 # ==========================================
@@ -1176,6 +1208,47 @@ if user_role == "admin":
             st.info("No evaluation data found. Start logging evaluations to see progress here!")
     
         st.divider() # A clean line to separate the tracker from the granular tracking
+
+        # ==========================================
+        # AI GAP ANALYSIS TOOL (Under the Step Tracker)
+        # ==========================================
+        st.divider()
+        st.subheader("🤖 AI Program Gap Analysis")
+        st.write("Run an automated ASHP audit on a specific standard to identify missing clinical experiences.")
+        
+        col_audit1, col_audit2 = st.columns([2, 1])
+        
+        with col_audit1:
+            # Dropdown options match the shorthand names from your Step Tracker
+            target_audit = st.selectbox("Select Standard to Audit", [
+                "R1.1.1 (Therapeutic Regimens)",
+                "R1.1.8 (Patient Outcomes)",
+                "R5.1.1 (Medical Emergencies)",
+                "E7.1.1 (Pre-hospital Teamwork)"
+            ])
+            
+        with col_audit2:
+            st.write("") # Spacing to align button with dropdown
+            st.write("")
+            run_audit = st.button("Run AI Audit", type="primary", use_container_width=True)
+            
+        if run_audit:
+            # 1. Extract the objective code (e.g., "R1.1.1")
+            audit_code = target_audit.split(" ")[0]
+            
+            # 2. Filter the dataframe to ONLY include evaluations for this standard
+            audit_df = eval_df[eval_df['ASHP Objective'].str.contains(audit_code, na=False)]
+            
+            if len(audit_df) == 0:
+                st.warning(f"No evaluations found for {target_audit}. Start logging to run an audit.")
+            else:
+                with st.spinner(f"AI Surveyor analyzing {len(audit_df)} evaluations..."):
+                    # 3. Call the AI function
+                    audit_report = run_gap_analysis(target_audit, audit_df)
+                    
+                    # 4. Display the results in a nice expander box
+                    with st.expander(f"📄 Official Audit Report: {target_audit}", expanded=True):
+                        st.markdown(audit_report)
     
         # ==========================================
         # 2. GRANULAR RESIDENT ASSIGNMENT TRACKING (Your existing code)
