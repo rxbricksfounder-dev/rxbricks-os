@@ -651,7 +651,7 @@ def render_evaluation_tool():
 # =========================================================
 def get_todays_schedule(target_name=None):
     if schedule_df.empty: return pd.DataFrame()
-    today_str = datetime.date.today().strftime("%Y-%m-%d")
+    today_str = datetime.today().strftime("%Y-%m-%d")
     
     date_col = 'Start Date' if 'Start Date' in schedule_df.columns else 'Date'
     today_sched = schedule_df[schedule_df[date_col] == today_str]
