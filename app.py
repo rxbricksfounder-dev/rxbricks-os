@@ -7,6 +7,7 @@ import pandas as pd
 import streamlit_authenticator as stauth
 import bcrypt
 import streamlit as st
+import streamlit.components.v1 as components
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
