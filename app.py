@@ -80,6 +80,47 @@ def analyze_evaluation_quality(dictated_text, ashp_objective):
         return json.loads(response.text)
     except Exception as e:
         return {"grade": "Error", "feedback": f"AI Parsing Error: {str(e)}", "suggested_rewrite": ""}
+
+# ==========================================\
+# 2.5. THE EVALUATION AUTO-FILL ENGINE (TAB VIEW)
+# ==========================================\
+def generate_ai_evaluation(raw_dictation, resident_name, rotation, topic, zone):
+    """Takes raw dictation and auto-fills the evaluation form fields using AI."""
+    # Ensure genai is configured with your API key
+    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+    model = genai.GenerativeModel('gemini-2.5-flash')
+    
+    prompt = f"""
+    You are an expert Pharmacy Residency Program Director.
+    Take the preceptor's raw dictation and format it into a highly professional clinical evaluation.
+    
+    Context:
+    * Resident: {resident_name}
+    * Rotation: {rotation}
+    * Topic/Clinical Action: {topic}
+    * Target Entrustment Zone: {zone}
+    
+    Raw Preceptor Dictation:
+    {raw_dictation}
+    
+    Output Requirements:
+    Return ONLY a strict JSON object with exactly these 4 keys:
+    1. "Grade": Must be exactly one of these strings: "ACHR", "ACH", "SP", or "NI". (Base this on the tone of the dictation).
+    2. "Comment": A 1-2 sentence professional assessment of the resident's performance on this specific objective.
+    3. "ActionPlan": 1-2 sentences detailing specific next steps to move the resident to the next level of independence.
+    4. "Narrative": A comprehensive synthesis paragraph combining all details into a formal evaluation note ready for an accreditation file.
+    """
+    
+    try:
+        # Using native JSON mode for perfect UI integration
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(response_mime_type="application/json")
+        )
+        return json.loads(response.text)
+    except Exception as e:
+        st.error(f"AI Formatting Error: {str(e)}")
+        return None
 # ==========================================
 # 2B. THE AI SCRIBE ENGINE (ADMIN & ASHP)
 # ==========================================
