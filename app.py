@@ -25,7 +25,7 @@ def log_evaluation_to_sheet(preceptor, resident, rotation, objective, criteria, 
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
-        creds = Credentials.from_service_account_info(st.secrets["raw_google_json"], scopes=scopes)
+        creds = Credentials.from_service_account_info(json.loads(st.secrets["raw_google_json"]), scopes=scopes)
         client = gspread.authorize(creds)
         
         # 2. Open the specific tab
