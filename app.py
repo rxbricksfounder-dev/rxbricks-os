@@ -221,6 +221,7 @@ users_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJt
 schedule_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1966612732&single=true&output=csv"
 assignments_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1293289954&single=true&output=csv"
 tasks_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=230208050&single=true&output=csv"
+ashp_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=227239585&single=true&output=csv"
 
 @st.cache_data(ttl=60)
 def load_all_data():
@@ -232,12 +233,15 @@ def load_all_data():
         user_db = pd.read_csv(clean(users_url))
         assign_df = pd.read_csv(clean(assignments_url))
         rotation_tasks_df = pd.read_csv(clean(tasks_url))
-        return curr, resp, sched, user_db, assign_df, rotation_tasks_df
+        # NEW: Load the ASHP framework
+        ashp_df = pd.read_csv(clean(ashp_url))
+        return curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df
     except Exception as e:
         st.error(f"⚠️ Link Verification Error: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df = load_all_data()
+# Unpack the 7th dataframe
+curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df, ashp_standards_df = load_all_data()
 
 # 4. AUTHENTICATION SETUP
 credentials = {"usernames": {}}
@@ -1161,32 +1165,79 @@ if user_role == "admin":
                         mime="text/plain"
                     )
 
-            # --- ASHP ACCREDITATION ENGINE ---
+            # --- ASHP ACCREDITATION ENGINE (FRAMEWORK-LOCKED) ---
             with doc_tabs[1]:
                 st.subheader("ASHP Progress Report Generator")
-                st.info("Generate formal responses to ASHP citations following the official Guidelines for Progress Reports.")
+                st.info("Generate formal responses to ASHP citations based strictly on the official Accreditation Standards framework.")
                 
-                ashp_standard = st.text_input("Cited ASHP Standard / Principle (e.g., 'Standard 3.1.c'):", key="ashp_std")
-                ashp_notes = st.text_area("Raw Notes on Corrective Action (How did we fix this? What is the timeline?):", height=200, key="ashp_raw_notes")
+                # 1. Parse the ASHP Framework CSV
+                if not ashp_standards_df.empty:
+                    # Assuming the standards are in a column named 'ASHP Standards' (based on your CSV structure)
+                    # We filter out empty rows or headers
+                    valid_standards = ashp_standards_df['ASHP Standards'].dropna().tolist()
+                    clean_standards = [s for s in valid_standards if str(s).strip() != "" and "Standard" in str(s) or str(s)[0].isdigit()]
+                else:
+                    clean_standards = ["Standard 3.1.c (Fallback Mode - CSV Not Loaded)"]
+    
+                # 2. Framework Selection Dropdown
+                st.write("🏛️ **1. Select Cited Standard**")
+                selected_standard = st.selectbox(
+                    "Search and select the exact standard from the ASHP framework:", 
+                    options=clean_standards,
+                    key="ashp_std_dropdown"
+                )
                 
-                if st.button("✨ Draft Formal ASHP Response", type="primary", key="btn_ashp"):
-                    if ashp_standard and ashp_notes:
-                        with st.spinner("Translating to ASHP accreditation standards..."):
-                            generated_response = generate_admin_document("ASHP", ashp_notes, ashp_standard)
+                st.write("🛠️ **2. Corrective Action Narrative**")
+                ashp_notes = st.text_area("Briefly explain the process, tool, or policy you implemented to fix this:", height=100, key="ashp_raw_notes")
+                
+                st.write("🔗 **3. Inject Live Platform Evidence**")
+                st.caption("Select the live data you want Gemini to pull directly from the RxBricks platform to prove compliance.")
+                
+                col_ev1, col_ev2 = st.columns(2)
+                with col_ev1:
+                    attach_evals = st.checkbox("📊 Attach Live Evaluation Metrics")
+                with col_ev2:
+                    attach_tasks = st.checkbox("📋 Attach Clinical Task/Policy Tracking")
+    
+                if st.button("✨ Draft Data-Backed ASHP Response", type="primary", key="btn_ashp"):
+                    if selected_standard and ashp_notes:
+                        with st.spinner("Compiling platform data and mapping to ASHP framework..."):
+                            
+                            # --- DATA AGGREGATION ENGINE ---
+                            platform_evidence = "\n--- LIVE PROGRAM DATA ---\n"
+                            
+                            if attach_evals:
+                                live_eval_df = get_evaluation_log()
+                                if not live_eval_df.empty:
+                                    total_evals = len(live_eval_df)
+                                    res_count = live_eval_df['Resident Name'].nunique()
+                                    recent_7_days = len(live_eval_df[pd.to_datetime(live_eval_df['Timestamp'], errors='coerce') >= (datetime.now() - pd.Timedelta(days=7))])
+                                    platform_evidence += f"- EVALUATIONS: The program has successfully logged {total_evals} formal clinical evaluations across {res_count} active residents. {recent_7_days} evaluations were completed in the last 7 days alone, demonstrating continuous active preceptor engagement.\n"
+                            
+                            if attach_tasks:
+                                if not assignments_df.empty:
+                                    platform_evidence += f"- TASKS/ASSIGNMENTS: The program utilizes an automated tracking system. Currently managing {len(assignments_df)} active clinical assignments/policies integrated directly into daily operations.\n"
+                            
+                            # Combine user notes, platform data, AND the exact framework text
+                            combined_notes = f"NARRATIVE CONTEXT:\n{ashp_notes}\n{platform_evidence}"
+                            
+                            # Pass the exact standard text as the context
+                            generated_response = generate_admin_document("ASHP", combined_notes, context=selected_standard)
+                            
                             if generated_response:
                                 st.session_state['draft_ashp'] = generated_response
                     else:
-                        st.warning("Please provide both the Standard and your corrective action notes.")
+                        st.warning("Please provide a brief narrative of your action plan.")
                         
                 if 'draft_ashp' in st.session_state:
                     st.write("---")
-                    st.subheader("Drafted Progress Report Response")
-                    final_ashp = st.text_area("Review and Edit:", value=st.session_state['draft_ashp'], height=300)
+                    st.subheader("Official Progress Report Response")
+                    final_ashp = st.text_area("Review and Edit:", value=st.session_state['draft_ashp'], height=400)
                     
                     st.download_button(
                         label="📥 Download Response",
                         data=final_ashp,
-                        file_name=f"ASHP_Response_{ashp_standard.replace('.', '_')}.txt",
+                        file_name=f"ASHP_Response_Draft.txt",
                         mime="text/plain"
                     )        
 # --- PRECEPTOR VIEW ---
