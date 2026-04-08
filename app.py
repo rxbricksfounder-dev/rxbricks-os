@@ -1087,35 +1087,57 @@ elif user_role == "learner":
     with tab3:
         st.subheader("📅 Upcoming Shifts")
         if not schedule_df.empty:
-            my_sched = schedule_df[schedule_df['Resident Name'] == name].head(5)
+            # 1. Convert the dates so Python understands them as actual time, not just text
+            temp_sched = schedule_df.copy()
+            temp_sched['Start Date'] = pd.to_datetime(temp_sched['Start Date'], errors='coerce')
+            
+            # 2. Find today's date (at midnight, so it includes shifts today)
+            today_date = pd.to_datetime(datetime.today().date())
+            
+            # 3. Filter for ONLY the logged-in resident AND dates that are today or in the future
+            future_sched = temp_sched[(temp_sched['Resident Name'] == name) & (temp_sched['Start Date'] >= today_date)]
+            
+            # 4. Sort them chronologically and grab the top 5
+            my_sched = future_sched.sort_values('Start Date').head(5)
+            
             if not my_sched.empty:
+                # Reformat the date to look clean on the screen
+                my_sched['Start Date'] = my_sched['Start Date'].dt.strftime('%Y-%m-%d')
                 st.table(my_sched[['Subject', 'Start Date', 'Start Time']])
             else:
-                st.info("No upcoming shifts scheduled.")
+                st.info("No upcoming shifts scheduled. Enjoy the downtime!")
+        
         st.divider()
         
-        # INJECT THE STEP COUNTER HERE
+        # --- THE NEW STEP COUNTER ---
         render_step_counter(resident_name=name, weekly_goal=5)
         
         st.divider()
+        
+        # --- THE UPDATED RECENT EVALUATIONS TABLE ---
         st.subheader("📈 My 10 Most Recent Evaluations")
         
-        if not eval_df.empty:
-            my_evals = eval_df[eval_df['Resident Name'] == name]
+        # Use our new backend function to pull the live 3_Evaluation_Log data!
+        live_eval_df = get_evaluation_log() 
+        
+        if not live_eval_df.empty:
+            my_evals = live_eval_df[live_eval_df['Resident Name'] == name].copy()
             
             if not my_evals.empty:
-                if 'Date' in my_evals.columns:
-                    my_evals['Date'] = pd.to_datetime(my_evals['Date'], errors='coerce')
-                    recent_10 = my_evals.sort_values(by='Date', ascending=False).head(10)
-                else:
-                    recent_10 = my_evals.tail(10)
+                # Use the 'Timestamp' column from the new 3_Evaluation_Log sheet
+                my_evals['Timestamp'] = pd.to_datetime(my_evals['Timestamp'], errors='coerce')
+                recent_10 = my_evals.sort_values(by='Timestamp', ascending=False).head(10)
+                
+                # Format the timestamp for a cleaner display
+                recent_10['Timestamp'] = recent_10['Timestamp'].dt.strftime('%Y-%m-%d %H:%M')
                 
                 st.metric("Total Lifetime Evaluations Logged", len(my_evals))
-                st.dataframe(recent_10, use_container_width=True)
+                
+                # Hide the index numbers to make it look like a clean B2B dashboard
+                st.dataframe(recent_10, use_container_width=True, hide_index=True)
             else:
-                st.info("No evaluation data found yet.")
+                st.info("No evaluations logged yet. Hunt down a preceptor!")
         else:
-            st.info("No evaluation data found yet.")
-
+            st.info("Evaluation database is currently empty.")
     with tab4:
         render_resident_profile(name, is_preceptor_view=False)
