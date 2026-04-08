@@ -46,7 +46,7 @@ def log_evaluation_to_sheet(preceptor, resident, rotation, objective, criteria, 
 # ==========================================\
 def analyze_evaluation_quality(dictated_text, ashp_objective):
     # Ensure genai is configured with your API key from secrets
-    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     
     # UPGRADE: Now using 2.5-flash for speed and native JSON support
     model = genai.GenerativeModel('gemini-2.5-flash')
@@ -87,7 +87,7 @@ def analyze_evaluation_quality(dictated_text, ashp_objective):
 def generate_ai_evaluation(raw_dictation, resident_name, rotation, topic, zone):
     """Takes raw dictation and auto-fills the evaluation form fields using AI."""
     # Ensure genai is configured with your API key
-    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     model = genai.GenerativeModel('gemini-2.5-flash')
     
     prompt = f"""
