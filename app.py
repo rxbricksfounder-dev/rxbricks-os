@@ -6,9 +6,52 @@ import streamlit as st
 import pandas as pd
 import streamlit_authenticator as stauth
 import bcrypt
-import streamlit.components.v1 as components
+import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
+from datetime import datetime
+
+# ==========================================
+# 1. THE BACKEND WRITE-BACK FUNCTION
+# ==========================================
+def log_evaluation_to_sheet(preceptor, resident, rotation, objective, criteria, grade, comment, action_plan, narrative):
+    """
+    Connects to Google Sheets and appends a new evaluation row.
+    Requires st.secrets["gcp_service_account"] to be configured.
+    """
+    try:
+        # 1. Establish the connection
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+        client = gspread.authorize(creds)
+        
+        # 2. Open the specific tab
+        sheet = client.open("01_MASTER_SHEET_EM").worksheet("3_Evaluation_Log")
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # 3. Format the data payload exactly matching the 10 headers
+        row_data = [
+            timestamp, 
+            preceptor, 
+            resident, 
+            rotation, 
+            objective,
+            criteria, 
+            grade, 
+            comment, 
+            action_plan, 
+            narrative
+        ]
+        
+        # 4. Append the row
+        sheet.append_row(row_data)
+        return True
+    except Exception as e:
+        st.error(f"Failed to securely log the evaluation: {e}")
+        return False
 
 # =========================================================
 # UI TRANSLATION DICTIONARY (ASHP to Clinical Role)
@@ -940,6 +983,65 @@ if user_role == "admin":
                 
     with tab2:
         render_evaluation_tool()
+
+    # ==========================================
+    # 2. THE FRONTEND UI (REVIEW & SUBMIT)
+    # ==========================================
+    # Place this section where the AI finishes its output processing.
+    
+    st.divider()
+    st.subheader("📝 Review & Submit Evaluation")
+    st.caption("Review the drafted evaluation below. You have total control to manually revise any text before finalizing.")
+    
+    # Display Context (Assumes these are stored in session state or selected above)
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**Resident:** Gabby Alvarez") # Replace with dynamic variable (e.g., selected_resident)
+        st.markdown("**Objective:** R1.1.8 - Demonstrate responsibility for patient outcomes.") # Replace with dynamic variable
+    with col2:
+        # Grade selection defaults to Satisfactory Progress (index 2)
+        final_grade = st.selectbox("Assigned Grade", ["ACHR", "ACH", "SP", "NI"], index=2)
+    
+    # Editable Text Areas for the AI Output
+    # Note: The 'value' parameter should be replaced with the actual variable holding your AI's generated text.
+    final_comment = st.text_area(
+        "Objective Comment", 
+        value="[AI Draft] Gabby effectively assumed responsibility for patient outcomes today...", 
+        height=150
+    )
+    
+    final_action_plan = st.text_area(
+        "Action Plan", 
+        value="[AI Draft] Continue to independently formulate and execute...", 
+        height=100
+    )
+    
+    final_narrative = st.text_area(
+        "Overall Narrative Synthesis", 
+        value="[AI Draft] Overall, clinical autonomy is progressing at an expected rate...", 
+        height=200
+    )
+    
+    # The Execution Button
+    if st.button("Approve & Submit to Log", type="primary", use_container_width=True):
+        with st.spinner("Writing evaluation to the master record..."):
+            
+            # Call the write-back function with the current text area values
+            success = log_evaluation_to_sheet(
+                preceptor="Sarah Midkiff",     # Replace with dynamic variable: st.session_state.name
+                resident="Gabby Alvarez",      # Replace with dynamic variable
+                rotation="CORE - 1 - EM",      # Replace with dynamic variable
+                objective="R1.1.8",            # Replace with dynamic variable
+                criteria="Demonstrate responsibility for patient outcomes.", # Replace with dynamic variable
+                grade=final_grade,
+                comment=final_comment,
+                action_plan=final_action_plan,
+                narrative=final_narrative
+            )
+            
+            if success:
+                st.success("✅ Evaluation successfully verified and secured in the Master Log.")
+                st.balloons()
         
     with tab3: 
         st.subheader("Today's Active Residents")
