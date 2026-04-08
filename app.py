@@ -181,7 +181,7 @@ def generate_admin_document(doc_type, raw_notes, context=""):
 # 3. AI GAP ANALYSIS ENGINE (RPD AUDIT)
 # ==========================================\
 def run_gap_analysis(standard_name, evaluation_data_subset):
-    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"]) # Or GEMINI_API_KEY based on your setup
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     model = genai.GenerativeModel('gemini-2.5-flash')
     
     # We combine all the narratives for this standard into one giant text block for the AI to read
