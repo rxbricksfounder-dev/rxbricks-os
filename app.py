@@ -1112,6 +1112,65 @@ def render_rpd_command_center(weekly_goal=5):
 
 # --- ADMIN VIEW (RPD) ---
 if user_role == "admin":
+
+    # ==========================================
+    # ASHP ACCREDITATION STEP TRACKER (RPD DASHBOARD)
+    # ==========================================
+    st.header("📊 ASHP Accreditation Step Tracker")
+
+    try:
+        eval_df = get_evaluation_log() 
+    except Exception as e:
+        st.error("Could not load Evaluation Log.")
+        eval_df = pd.DataFrame()
+
+    if not eval_df.empty:
+        # 2. Define your quantitative goals (You can adjust these numbers!)
+        target_goals = {
+            "R1.1.1 (Therapeutic Regimens)": 10,
+            "R1.1.8 (Patient Outcomes)": 10,
+            "R5.1.1 (Medical Emergencies)": 5,
+            "E7.1.1 (Pre-hospital Teamwork)": 3
+        }
+
+        # 3. Filter controls
+        view_mode = st.radio("Select View", ["Program Overview", "By Resident"], horizontal=True)
+        
+        if view_mode == "By Resident":
+            selected_res = st.selectbox("Select Resident to Audit", ["Gabby Alvarez", "Brayden Key", "Samantha Richardson"])
+            working_df = eval_df[eval_df['Resident Name'] == selected_res]
+        else:
+            working_df = eval_df
+
+        st.divider()
+
+        # 4. Render the Visual Progress Bars
+        col1, col2 = st.columns(2)
+        items = list(target_goals.items())
+        half_point = len(items) // 2
+
+        def render_progress(column, items_to_render):
+            with column:
+                for goal_name, required_count in items_to_render:
+                    objective_code = goal_name.split(" ")[0] 
+                    current_count = len(working_df[working_df['ASHP Objective'].str.contains(objective_code, na=False)])
+                    progress_pct = min(current_count / required_count, 1.0)
+                    
+                    st.write(f"**{goal_name}**")
+                    st.progress(progress_pct)
+                    
+                    if current_count >= required_count:
+                        st.caption(f"✅ Target Met: {current_count} / {required_count} logged")
+                    else:
+                        st.caption(f"⏳ Pending: {current_count} / {required_count} logged ({required_count - current_count} remaining)")
+                    st.write("")
+
+        render_progress(col1, items[:half_point])
+        render_progress(col2, items[half_point:])
+
+    else:
+        st.info("No evaluation data found. Start logging evaluations to see progress here!")
+        
     st.title("📈 Program Director Dashboard")
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 Reports & Progress", "👨‍🏫 Submit Evaluation", "📅 Daily Operations", "📋 Assignment Tracker", "🎓 Academic Records", "📝 Admin & Accreditation"])
     
