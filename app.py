@@ -904,7 +904,7 @@ def render_assignment_tracker():
     st.download_button(
         label=f"Download Report ({selected_res})",
         data=csv_data,
-        file_name=f"Pharmacademic_Assignment_Report_{selected_res.replace(' ', '_')}_{datetime.date.today()}.csv",
+        file_name=f"Pharmacademic_Assignment_Report_{selected_res.replace(' ', '_')}_{datetime.today().strftime('%Y-%m-%d')}.csv",
         mime="text/csv",
         type="primary"
     )
