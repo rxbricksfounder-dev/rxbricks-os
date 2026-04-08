@@ -919,6 +919,84 @@ def log_task_completion(resident_name, task_name, rotation):
         return False 
 
 # =========================================================
+# REUSABLE COMPONENT: RPD COMMAND CENTER DASHBOARD
+# =========================================================
+def render_rpd_command_center(weekly_goal=5):
+    st.subheader("🌐 RPD Command Center: Program Overview")
+    st.caption("Live aggregate view of clinical evaluation pacing across all residents.")
+    
+    live_eval_df = get_evaluation_log()
+    
+    if live_eval_df.empty:
+        st.info("No evaluation data available yet to build macro view.")
+        return
+        
+    # Ensure Timestamp is datetime
+    live_eval_df['Timestamp'] = pd.to_datetime(live_eval_df['Timestamp'], errors='coerce')
+    seven_days_ago = datetime.now() - pd.Timedelta(days=7)
+    
+    # Get all residents from the user database so we see zeros for those avoiding preceptors
+    res_names = users_df[users_df['Role'].str.upper() == 'RESIDENT']['Name'].tolist()
+    
+    if not res_names:
+        st.warning("No residents found in the system to track.")
+        return
+        
+    macro_data = []
+    for res in res_names:
+        res_df = live_eval_df[live_eval_df['Resident Name'] == res]
+        total_evals = len(res_df)
+        recent_evals = len(res_df[res_df['Timestamp'] >= seven_days_ago])
+        
+        # Determine Pacing Status
+        if recent_evals >= weekly_goal:
+            status = "🌟 Excelling (Goal Met)"
+        elif recent_evals > 0:
+            status = "⚠️ Falling Behind"
+        else:
+            status = "🚨 Critical (0 Logged)"
+            
+        macro_data.append({
+            "Resident": res,
+            "7-Day Volume": recent_evals,
+            "Total Lifetime": total_evals,
+            "Pacing Status": status
+        })
+        
+    macro_df = pd.DataFrame(macro_data)
+    
+    # 1. Top-Level Metric Cards
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Program Evals", len(live_eval_df))
+    with col2:
+        st.metric("Program Evals This Week", sum(macro_df['7-Day Volume']))
+    with col3:
+        active_count = len(macro_df[macro_df['7-Day Volume'] > 0])
+        st.metric("Active Residents (7 Days)", f"{active_count} / {len(res_names)}")
+        
+    st.write("---")
+    
+    # 2. Visual Progress Table
+    st.dataframe(
+        macro_df,
+        column_config={
+            "7-Day Volume": st.column_config.ProgressColumn(
+                "7-Day Volume (Target: 5)",
+                help="Number of evaluations logged in the last 7 days.",
+                format="%f",
+                min_value=0,
+                max_value=weekly_goal,
+            ),
+            "Pacing Status": st.column_config.TextColumn(
+                "Pacing Status",
+                help="Status based on meeting the weekly evaluation target."
+            )
+        },
+        use_container_width=True,
+        hide_index=True
+    )
+# =========================================================
 # DASHBOARDS
 # =========================================================
 
@@ -928,32 +1006,40 @@ if user_role == "admin":
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Reports & Progress", "👨‍🏫 Submit Evaluation", "📅 Daily Operations", "📋 Assignment Tracker", "🎓 Academic Records"])
     
     with tab1:
-        st.subheader("Resident Assignment Tracking")
+        # INJECT THE NEW MACRO COMMAND CENTER HERE
+        render_rpd_command_center(weekly_goal=5)
+        
+        st.write("---")
+        
+        # Keep the existing granular drill-down below the macro view
+        st.subheader("Granular Resident Assignment Tracking")
         if eval_df.empty:
-            st.info("No evaluation data found.")
+            st.info("No legacy evaluation data found.")
         else:
-            res_list = eval_df['Resident Name'].dropna().unique().tolist()
+            # Note: We pull from live_eval_df here to make sure the export matches the live database
+            live_eval_df = get_evaluation_log()
+            res_list = live_eval_df['Resident Name'].dropna().unique().tolist()
             if res_list:
                 sel_res = st.selectbox("Review Resident Progress:", res_list, key="admin_report_res")
                 render_step_tracker(sel_res)
                 st.write("---")
                 
-                res_data = eval_df[eval_df['Resident Name'] == sel_res]
+                res_data = live_eval_df[live_eval_df['Resident Name'] == sel_res]
                 
                 col1, col2 = st.columns(2)
                 with col1:
-                    st.metric("Total Completed Evaluations", len(res_data))
+                    st.metric(f"Total Completed Evaluations ({sel_res})", len(res_data))
                 with col2:
                     csv_export = res_data.to_csv(index=False).encode('utf-8')
                     st.download_button(
                         label="📥 Export Resident Data (CSV)",
                         data=csv_export,
-                        file_name=f"{sel_res}_eval_report.csv",
+                        file_name=f"{sel_res}_eval_report_{datetime.today().strftime('%Y-%m-%d')}.csv",
                         mime='text/csv',
                         type="primary"
                     )
                 
-                st.dataframe(res_data, use_container_width=True)
+                st.dataframe(res_data, use_container_width=True, hide_index=True)
                 
     with tab2:
         render_evaluation_tool()
