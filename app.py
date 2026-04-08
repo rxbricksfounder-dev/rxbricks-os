@@ -275,6 +275,11 @@ elif authentication_status is None:
     st.warning("Please log in to access RxBricks EM")
     st.stop()
 
+# --- NEW SAFETY CHECK ---
+if username not in credentials["usernames"]:
+    st.error("🚨 User database sync error. The app couldn't find your profile. This usually means one of your Google Sheet links (like the new ASHP one) is broken or not published as a CSV, causing the database to load empty.")
+    st.stop()
+
 user_role = credentials["usernames"][username]["role"]
 user_tier = credentials["usernames"][username]["tier"]
 authenticator.logout(location="sidebar")
