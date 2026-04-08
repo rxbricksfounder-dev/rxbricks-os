@@ -27,7 +27,7 @@ def log_evaluation_to_sheet(preceptor, resident, rotation, objective, criteria, 
         ]
         creds = Credentials.from_service_account_info(json.loads(st.secrets["raw_google_json"]), scopes=scopes)
         client = gspread.authorize(creds)
-        
+      
         # 2. Open the specific tab
         sheet = client.open("01_MASTER_SHEET_EM").worksheet("3_Evaluation_Log")
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -52,7 +52,71 @@ def log_evaluation_to_sheet(preceptor, resident, rotation, objective, criteria, 
     except Exception as e:
         st.error(f"Failed to securely log the evaluation: {e}")
         return False
+# ==========================================
+# 3. THE BACKEND READ FUNCTION (STEP COUNTER)
+# ==========================================
+@st.cache_data(ttl=60) # Caches data for 60 seconds to prevent Google API rate limits
+def get_evaluation_log():
+    try:
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        # Using your exact working credentials format
+        creds = Credentials.from_service_account_info(json.loads(st.secrets["raw_google_json"]), scopes=scopes)
+        client = gspread.authorize(creds)
+        
+        sheet = client.open("01_MASTER_SHEET_EM").worksheet("3_Evaluation_Log")
+        
+        # Pulls all data into a list of dictionaries, then converts to a Pandas DataFrame
+        data = sheet.get_all_records()
+        return pd.DataFrame(data)
+    except Exception as e:
+        st.error(f"Failed to load evaluation log: {e}")
+        return pd.DataFrame()
 
+# ==========================================
+# 4. THE STEP COUNTER DASHBOARD COMPONENT
+# ==========================================
+def render_step_counter(resident_name, weekly_goal=5):
+    st.subheader("🏃‍♂️ Clinical Step Counter")
+    
+    df = get_evaluation_log()
+    
+    if df.empty:
+        st.info("No clinical actions logged yet. Go get some feedback!")
+        return
+
+    # Filter for this specific resident
+    my_evals = df[df['Resident Name'] == resident_name].copy()
+    
+    if my_evals.empty:
+        st.info("You haven't logged any actions yet this week. Hunt down a preceptor!")
+        return
+
+    # Convert timestamps to actual dates and filter for the last 7 days
+    my_evals['Timestamp'] = pd.to_datetime(my_evals['Timestamp'], errors='coerce')
+    seven_days_ago = datetime.now() - pd.Timedelta(days=7)
+    recent_evals = my_evals[my_evals['Timestamp'] >= seven_days_ago]
+    
+    current_steps = len(recent_evals)
+    
+    # Calculate progress (capped at 1.0 or 100% so the bar doesn't break if they overachieve)
+    progress_fraction = min(current_steps / weekly_goal, 1.0)
+    
+    # Render the UI
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        st.metric("Actions (Last 7 Days)", f"{current_steps} / {weekly_goal}")
+    with col2:
+        st.write("") # Spacer to align with the metric
+        st.progress(progress_fraction)
+        
+    if current_steps >= weekly_goal:
+        st.success("🎯 Weekly goal met! Excellent job driving your clinical autonomy.")
+    else:
+        st.caption(f"You need {weekly_goal - current_steps} more logged actions to hit your weekly target.")
+        
 # =========================================================
 # UI TRANSLATION DICTIONARY (ASHP to Clinical Role)
 # =========================================================
@@ -1027,6 +1091,10 @@ elif user_role == "learner":
                 st.table(my_sched[['Subject', 'Start Date', 'Start Time']])
             else:
                 st.info("No upcoming shifts scheduled.")
+        st.divider()
+        
+        # INJECT THE STEP COUNTER HERE
+        render_step_counter(resident_name=name, weekly_goal=5)
         
         st.divider()
         st.subheader("📈 My 10 Most Recent Evaluations")
