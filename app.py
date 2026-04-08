@@ -6,22 +6,17 @@ import streamlit as st
 import pandas as pd
 import streamlit_authenticator as stauth
 import bcrypt
-import streamlit as st
 import streamlit.components.v1 as components
 import gspread
 from google.oauth2.service_account import Credentials
 from datetime import datetime
+import google.generativeai as genai # NEW: Google AI import
 
 # ==========================================
 # 1. THE BACKEND WRITE-BACK FUNCTION
 # ==========================================
 def log_evaluation_to_sheet(preceptor, resident, rotation, objective, criteria, grade, comment, action_plan, narrative):
-    """
-    Connects to Google Sheets and appends a new evaluation row.
-    Requires st.secrets["gcp_service_account"] to be configured.
-    """
     try:
-        # 1. Establish the connection
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
@@ -29,47 +24,74 @@ def log_evaluation_to_sheet(preceptor, resident, rotation, objective, criteria, 
         creds = Credentials.from_service_account_info(json.loads(st.secrets["raw_google_json"]), scopes=scopes)
         client = gspread.authorize(creds)
       
-        # 2. Open the specific tab
         sheet = client.open("01_MASTER_SHEET_EM").worksheet("3_Evaluation_Log")
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # 3. Format the data payload exactly matching the 10 headers
         row_data = [
-            timestamp, 
-            preceptor, 
-            resident, 
-            rotation, 
-            objective,
-            criteria, 
-            grade, 
-            comment, 
-            action_plan, 
-            narrative
+            timestamp, preceptor, resident, rotation, objective,
+            criteria, grade, comment, action_plan, narrative
         ]
         
-        # 4. Append the row
         sheet.append_row(row_data)
         return True
     except Exception as e:
         st.error(f"Failed to securely log the evaluation: {e}")
         return False
+
+# ==========================================
+# 2. THE AI DICTATION ENGINE (THE "MAGIC")
+# ==========================================
+def generate_ai_evaluation(raw_notes, resident, rotation, topic, zone):
+    """Processes raw dictation into a formal clinical evaluation using Gemini."""
+    try:
+        if "GEMINI_API_KEY" not in st.secrets:
+            st.error("🚨 Missing GEMINI_API_KEY in Streamlit secrets.")
+            return None
+            
+        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+        # Utilizing 1.5 Flash for rapid, structured text generation
+        model = genai.GenerativeModel(
+            'gemini-1.5-flash', 
+            generation_config={"response_mime_type": "application/json"}
+        )
+        
+        prompt = f"""
+        You are an expert clinical pharmacy residency program director.
+        Convert these raw dictation notes into a formal residency evaluation.
+        
+        Resident: {resident}
+        Rotation: {rotation}
+        Topic/Action: {topic}
+        Entrustment Zone: {zone}
+        Raw Notes: "{raw_notes}"
+        
+        Respond ONLY with a valid JSON object matching exactly this schema:
+        {{
+            "Grade": "ACHR" or "ACH" or "SP" or "NI" (Choose based on notes: ACHR=independent/mastery, ACH=proficient/Zone 3, SP=progressing/Zone 2, NI=needs improvement/Zone 1),
+            "Comment": "A professional 1-2 sentence objective comment on the performance.",
+            "ActionPlan": "Specific actionable next steps for the resident's growth based on the notes.",
+            "Narrative": "A cohesive overall narrative synthesis of the clinical encounter."
+        }}
+        """
+        response = model.generate_content(prompt)
+        return json.loads(response.text)
+    except Exception as e:
+        st.error(f"AI Generation Failed: {e}")
+        return None
+
 # ==========================================
 # 3. THE BACKEND READ FUNCTION (STEP COUNTER)
 # ==========================================
-@st.cache_data(ttl=60) # Caches data for 60 seconds to prevent Google API rate limits
+@st.cache_data(ttl=60)
 def get_evaluation_log():
     try:
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
-        # Using your exact working credentials format
         creds = Credentials.from_service_account_info(json.loads(st.secrets["raw_google_json"]), scopes=scopes)
         client = gspread.authorize(creds)
-        
         sheet = client.open("01_MASTER_SHEET_EM").worksheet("3_Evaluation_Log")
-        
-        # Pulls all data into a list of dictionaries, then converts to a Pandas DataFrame
         data = sheet.get_all_records()
         return pd.DataFrame(data)
     except Exception as e:
@@ -88,29 +110,24 @@ def render_step_counter(resident_name, weekly_goal=5):
         st.info("No clinical actions logged yet. Go get some feedback!")
         return
 
-    # Filter for this specific resident
     my_evals = df[df['Resident Name'] == resident_name].copy()
     
     if my_evals.empty:
         st.info("You haven't logged any actions yet this week. Hunt down a preceptor!")
         return
 
-    # Convert timestamps to actual dates and filter for the last 7 days
     my_evals['Timestamp'] = pd.to_datetime(my_evals['Timestamp'], errors='coerce')
     seven_days_ago = datetime.now() - pd.Timedelta(days=7)
     recent_evals = my_evals[my_evals['Timestamp'] >= seven_days_ago]
     
     current_steps = len(recent_evals)
-    
-    # Calculate progress (capped at 1.0 or 100% so the bar doesn't break if they overachieve)
     progress_fraction = min(current_steps / weekly_goal, 1.0)
     
-    # Render the UI
     col1, col2 = st.columns([1, 3])
     with col1:
         st.metric("Actions (Last 7 Days)", f"{current_steps} / {weekly_goal}")
     with col2:
-        st.write("") # Spacer to align with the metric
+        st.write("")
         st.progress(progress_fraction)
         
     if current_steps >= weekly_goal:
@@ -122,108 +139,28 @@ def render_step_counter(resident_name, weekly_goal=5):
 # UI TRANSLATION DICTIONARY (ASHP to Clinical Role)
 # =========================================================
 ASHP_TO_CLINICAL_ROLE = {
-    # BEDSIDE EMERGENCY RESPONSE
-    "R1.1.6": {
-        "role_name": "Bedside Emergency Response",
-        "ui_header": "### 🚨 Acute Medical Response & Direct Care",
-        "description": "Ensure implementation of therapeutic regimens."
-    },
-    "R5.1.1": {
-        "role_name": "Medical Emergency Management & Leadership",
-        "ui_header": "### 🚨 Acute Medical Response & Direct Care",
-        "description": "Demonstrate the essential role of the EM pharmacist in emergencies."
-    },
-
-    # MULTIDISCIPLINARY INTERACTION & DRUG INFO
-    "R1.1.1": {
-        "role_name": "Multidisciplinary Interaction & Drug Info",
-        "ui_header": "### 🗣️ Multidisciplinary Interaction & Drug Info",
-        "description": "Interact effectively with health care teams."
-    },
-    "R1.1.2": {
-        "role_name": "Multidisciplinary Interaction & Drug Info",
-        "ui_header": "### 🗣️ Multidisciplinary Interaction & Drug Info",
-        "description": "Interact effectively with patients, family, and caregivers."
-    },
-    "R1.1.7": {
-        "role_name": "Multidisciplinary Interaction & Drug Info",
-        "ui_header": "### 🗣️ Multidisciplinary Interaction & Drug Info",
-        "description": "Communicate and document direct patient care activities."
-    },
-
-    # PATIENT WORK-UPS & PRECEPTOR DISCUSSION
-    "R1.1.3": {
-        "role_name": "Patient Work-ups & Preceptor Discussion",
-        "ui_header": "### 🧠 Patient Work-ups & Preceptor Discussion",
-        "description": "Collect and analyze information to base safe therapy."
-    },
-    "R1.1.4": {
-        "role_name": "Patient Work-ups & Preceptor Discussion",
-        "ui_header": "### 🧠 Patient Work-ups & Preceptor Discussion",
-        "description": "Analyze and assess information for safe medication therapy."
-    },
-    "R1.1.5": {
-        "role_name": "Patient Work-ups & Preceptor Discussion",
-        "ui_header": "### 🧠 Patient Work-ups & Preceptor Discussion",
-        "description": "Design safe and effective patient-centered therapeutic regimens."
-    },
-    "R1.1.8": {
-        "role_name": "Patient Work-ups & Preceptor Discussion",
-        "ui_header": "### 🧠 Patient Work-ups & Preceptor Discussion",
-        "description": "Demonstrate responsibility for patient outcomes."
-    },
-    "R1.2.1": {
-        "role_name": "Patient Work-ups & Preceptor Discussion",
-        "ui_header": "### 🔄 Transitions of Care",
-        "description": "Manage transitions of care effectively."
-    },
-
-    # MEDICATION PREPARATION & DELIVERY
-    "R1.3.1": {
-        "role_name": "Medication Preparation & Delivery",
-        "ui_header": "### 💊 Medication Preparation & Delivery",
-        "description": "Facilitate delivery of medications following best practices."
-    },
-    "R1.3.2": {
-        "role_name": "Medication Preparation & Delivery",
-        "ui_header": "### 💊 Medication Preparation & Delivery",
-        "description": "Manage aspects of the medication-use process related to formulary."
-    },
-    "R1.3.3": {
-        "role_name": "Medication Preparation & Delivery",
-        "ui_header": "### 💊 Medication Preparation & Delivery",
-        "description": "Facilitate aspects of the medication-use process."
-    },
-
-    # DEPARTMENTAL RESPONSIBILITIES & QUALITY IMPROVEMENT
-    "R2.1.1": {
-        "role_name": "Systems Educator & Innovator",
-        "ui_header": "### 📋 Departmental Responsibilities & Projects",
-        "description": "Prepare or revise a drug class review, monograph, or guideline."
-    },
-    "R2.1.2": {
-        "role_name": "Systems Educator & Innovator",
-        "ui_header": "### 📋 Departmental Responsibilities & Projects",
-        "description": "Identify opportunities for improvement of the medication-use system."
-    },
-    "R2.2.1": {
-        "role_name": "Systems Educator & Innovator",
-        "ui_header": "### 📋 Departmental Responsibilities & Projects",
-        "description": "Identify and demonstrate understanding of specific project topic."
-    },
-    
-    # Catch-all
-    "ROTATION_EXPECTATION": {
-        "role_name": "Departmental Responsibilities",
-        "ui_header": "### 📋 General Rotation Expectations",
-        "description": "General rotation expectations, meetings, and standard duties."
-    }
+    "R1.1.6": {"role_name": "Bedside Emergency Response", "ui_header": "### 🚨 Acute Medical Response & Direct Care", "description": "Ensure implementation of therapeutic regimens."},
+    "R5.1.1": {"role_name": "Medical Emergency Management & Leadership", "ui_header": "### 🚨 Acute Medical Response & Direct Care", "description": "Demonstrate the essential role of the EM pharmacist in emergencies."},
+    "R1.1.1": {"role_name": "Multidisciplinary Interaction & Drug Info", "ui_header": "### 🗣️ Multidisciplinary Interaction & Drug Info", "description": "Interact effectively with health care teams."},
+    "R1.1.2": {"role_name": "Multidisciplinary Interaction & Drug Info", "ui_header": "### 🗣️ Multidisciplinary Interaction & Drug Info", "description": "Interact effectively with patients, family, and caregivers."},
+    "R1.1.7": {"role_name": "Multidisciplinary Interaction & Drug Info", "ui_header": "### 🗣️ Multidisciplinary Interaction & Drug Info", "description": "Communicate and document direct patient care activities."},
+    "R1.1.3": {"role_name": "Patient Work-ups & Preceptor Discussion", "ui_header": "### 🧠 Patient Work-ups & Preceptor Discussion", "description": "Collect and analyze information to base safe therapy."},
+    "R1.1.4": {"role_name": "Patient Work-ups & Preceptor Discussion", "ui_header": "### 🧠 Patient Work-ups & Preceptor Discussion", "description": "Analyze and assess information for safe medication therapy."},
+    "R1.1.5": {"role_name": "Patient Work-ups & Preceptor Discussion", "ui_header": "### 🧠 Patient Work-ups & Preceptor Discussion", "description": "Design safe and effective patient-centered therapeutic regimens."},
+    "R1.1.8": {"role_name": "Patient Work-ups & Preceptor Discussion", "ui_header": "### 🧠 Patient Work-ups & Preceptor Discussion", "description": "Demonstrate responsibility for patient outcomes."},
+    "R1.2.1": {"role_name": "Patient Work-ups & Preceptor Discussion", "ui_header": "### 🔄 Transitions of Care", "description": "Manage transitions of care effectively."},
+    "R1.3.1": {"role_name": "Medication Preparation & Delivery", "ui_header": "### 💊 Medication Preparation & Delivery", "description": "Facilitate delivery of medications following best practices."},
+    "R1.3.2": {"role_name": "Medication Preparation & Delivery", "ui_header": "### 💊 Medication Preparation & Delivery", "description": "Manage aspects of the medication-use process related to formulary."},
+    "R1.3.3": {"role_name": "Medication Preparation & Delivery", "ui_header": "### 💊 Medication Preparation & Delivery", "description": "Facilitate aspects of the medication-use process."},
+    "R2.1.1": {"role_name": "Systems Educator & Innovator", "ui_header": "### 📋 Departmental Responsibilities & Projects", "description": "Prepare or revise a drug class review, monograph, or guideline."},
+    "R2.1.2": {"role_name": "Systems Educator & Innovator", "ui_header": "### 📋 Departmental Responsibilities & Projects", "description": "Identify opportunities for improvement of the medication-use system."},
+    "R2.2.1": {"role_name": "Systems Educator & Innovator", "ui_header": "### 📋 Departmental Responsibilities & Projects", "description": "Identify and demonstrate understanding of specific project topic."},
+    "ROTATION_EXPECTATION": {"role_name": "Departmental Responsibilities", "ui_header": "### 📋 General Rotation Expectations", "description": "General rotation expectations, meetings, and standard duties."}
 }
 
 # 1. SETTINGS & CONFIG
 st.set_page_config(page_title="RxBricks: EM Trust Verification", layout="wide", page_icon="🧱")
 
-# Google Sheets Links
 sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=0&single=true&output=csv"
 responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1012642150&single=true&output=csv"
 users_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1844700463&single=true&output=csv"
@@ -241,7 +178,6 @@ def load_all_data():
         user_db = pd.read_csv(clean(users_url))
         assign_df = pd.read_csv(clean(assignments_url))
         rotation_tasks_df = pd.read_csv(clean(tasks_url))
-        
         return curr, resp, sched, user_db, assign_df, rotation_tasks_df
     except Exception as e:
         st.error(f"⚠️ Link Verification Error: {e}")
@@ -405,7 +341,6 @@ def render_step_tracker(resident_name):
 # REUSABLE COMPONENT: MILESTONES & PROFILE
 # =========================================================
 def get_milestone_badges(resident_name):
-    """Compares curriculum topics to resident evaluations to find mastered modules."""
     if curriculum_df.empty or eval_df.empty:
         return {}
 
@@ -532,7 +467,7 @@ def render_evaluation_tool():
     eval_tabs = st.tabs(["⚡ Log Clinical Action", "📚 Evaluate Curriculum Topic"])
     
     # ---------------------------------------------------------
-    # TAB 1: ACTION-ORIENTED EVALUATION 
+    # TAB 1: ACTION-ORIENTED EVALUATION (WITH AI)
     # ---------------------------------------------------------
     with eval_tabs[0]:
         st.subheader("Action-Oriented Evaluation")
@@ -540,7 +475,6 @@ def render_evaluation_tool():
             st.info("No clinical task mappings available.")
         else:
             clean_tasks = rotation_tasks_df.dropna(subset=['Actionable_Activity'])
-            
             all_rotations = sorted(clean_tasks['Rotation_ID'].dropna().unique().tolist())
             selected_rotation = st.selectbox("1. Select Rotation", options=all_rotations, key="eval_rotation_sel")
             
@@ -565,15 +499,46 @@ def render_evaluation_tool():
                     objs_str = "; ".join(applicable_objectives) if applicable_objectives else "general clinical expectations"
                     auto_action_narrative = f"Resident {target_res} was evaluated on '{selected_action}' during the '{selected_rotation}' rotation.\n\nDemonstrated competence toward: {objs_str}"
                     
-                    # --- NEW INTEGRATED UI (ACTION TAB) ---
+                    # --- AI DICTATION ENGINE (TAB 1) ---
+                    st.write("---")
+                    st.subheader("🎙️ AI Dictation & Auto-Fill")
+                    st.caption("Dump raw thoughts, shorthand, or voice-to-text here. Gemini will instantly format it into formal clinical evaluation language.")
+                    raw_dictation_1 = st.text_area("Raw Preceptor Notes:", height=100, key="dictation_1")
+
+                    if st.button("✨ Draft Evaluation with AI", type="secondary", key="ai_btn_1"):
+                        if raw_dictation_1:
+                            with st.spinner("Processing dictation through Gemini..."):
+                                ai_result = generate_ai_evaluation(raw_dictation_1, target_res, selected_rotation, selected_action, zone_action)
+                                if ai_result:
+                                    st.session_state['grade_1'] = ai_result.get('Grade', 'SP')
+                                    st.session_state['comment_1'] = ai_result.get('Comment', '')
+                                    st.session_state['action_1'] = ai_result.get('ActionPlan', '')
+                                    st.session_state['narrative_1'] = ai_result.get('Narrative', '')
+                                    st.rerun() 
+                        else:
+                            st.warning("Please enter some raw notes first.")
+
+                    # --- REVIEW & SUBMIT ---
                     st.write("---")
                     st.subheader("📝 Review & Submit Evaluation")
                     
-                    final_grade_1 = st.selectbox("Assigned Grade", ["ACHR", "ACH", "SP", "NI"], index=2, key="grade_1")
+                    # Pull defaults from session state (updated by AI) or use baseline
+                    def_grade_1 = st.session_state.get('grade_1', "SP")
+                    grade_options = ["ACHR", "ACH", "SP", "NI"]
+                    grade_index_1 = grade_options.index(def_grade_1) if def_grade_1 in grade_options else 2
+
+                    final_grade_1 = st.selectbox("Assigned Grade", grade_options, index=grade_index_1, key="grade_1")
                     
-                    final_comment_1 = st.text_area("Objective Comment", value=f"Resident performed clinical action '{selected_action}' effectively in {zone_action.split(':')[0]}.", height=100, key="comment_1")
-                    final_action_plan_1 = st.text_area("Action Plan", value=next_steps, height=100, key="action_1")
-                    final_narrative_1 = st.text_area("Overall Narrative Synthesis", value=auto_action_narrative, height=150, key="narrative_1")
+                    if 'comment_1' not in st.session_state:
+                        st.session_state['comment_1'] = f"Resident performed clinical action '{selected_action}' effectively in {zone_action.split(':')[0]}."
+                    if 'action_1' not in st.session_state:
+                        st.session_state['action_1'] = next_steps
+                    if 'narrative_1' not in st.session_state:
+                        st.session_state['narrative_1'] = auto_action_narrative
+
+                    final_comment_1 = st.text_area("Objective Comment", height=100, key="comment_1")
+                    final_action_plan_1 = st.text_area("Action Plan", height=100, key="action_1")
+                    final_narrative_1 = st.text_area("Overall Narrative Synthesis", height=150, key="narrative_1")
                     
                     if st.button("🚀 Log Action to Master Sheet", type="primary", key="submit_1"):
                         with st.spinner("Writing to database..."):
@@ -587,7 +552,7 @@ def render_evaluation_tool():
                                 st.success("✅ Success! Evaluation secured in the Master Log.")
 
     # ---------------------------------------------------------
-    # TAB 2: CURRICULUM TOPIC EVALUATION
+    # TAB 2: CURRICULUM TOPIC EVALUATION (WITH AI)
     # ---------------------------------------------------------
     with eval_tabs[1]:
         st.subheader("Curriculum Topic Evaluation")
@@ -604,8 +569,6 @@ def render_evaluation_tool():
             if not topic_data.empty:
                 activity_row = topic_data.iloc[0]
                 raw_obj = activity_row.get('ASHP Objective', 'Patient Care Objective')
-                raw_sub_obj = activity_row.get('ASHP Sub-Objective', 'Perform clinical duties')
-                
                 zone = st.radio("Entrustment Zone:", ["Zone 1: Direct Supervision", "Zone 2: Proactive Supervision", "Zone 3: Reactive Supervision", "Zone 4: Independent"], key="eval_tool_zone")
                 eval_rotation_2 = st.text_input("Rotation / Context", value="CORE - EM", key="rot_2")
                 
@@ -619,15 +582,45 @@ def render_evaluation_tool():
 
                 auto_narrative_2 = f"Resident {target_res} evaluated on {sel_topic}. Operating within {cog_domain}, the resident demonstrated the ability to {action_verb} related to objective {raw_obj}."
 
-                # --- NEW INTEGRATED UI (TOPIC TAB) ---
+                # --- AI DICTATION ENGINE (TAB 2) ---
+                st.write("---")
+                st.subheader("🎙️ AI Dictation & Auto-Fill")
+                st.caption("Dump raw thoughts, shorthand, or voice-to-text here. Gemini will instantly format it into formal clinical evaluation language.")
+                raw_dictation_2 = st.text_area("Raw Preceptor Notes:", height=100, key="dictation_2")
+
+                if st.button("✨ Draft Evaluation with AI", type="secondary", key="ai_btn_2"):
+                    if raw_dictation_2:
+                        with st.spinner("Processing dictation through Gemini..."):
+                            ai_result = generate_ai_evaluation(raw_dictation_2, target_res, eval_rotation_2, sel_topic, zone)
+                            if ai_result:
+                                st.session_state['grade_2'] = ai_result.get('Grade', 'SP')
+                                st.session_state['comment_2'] = ai_result.get('Comment', '')
+                                st.session_state['action_2'] = ai_result.get('ActionPlan', '')
+                                st.session_state['narrative_2'] = ai_result.get('Narrative', '')
+                                st.rerun() 
+                    else:
+                        st.warning("Please enter some raw notes first.")
+
+                # --- REVIEW & SUBMIT ---
                 st.write("---")
                 st.subheader("📝 Review & Submit Evaluation")
                 
-                final_grade_2 = st.selectbox("Assigned Grade", ["ACHR", "ACH", "SP", "NI"], index=2, key="grade_2")
+                def_grade_2 = st.session_state.get('grade_2', "SP")
+                grade_options_2 = ["ACHR", "ACH", "SP", "NI"]
+                grade_index_2 = grade_options_2.index(def_grade_2) if def_grade_2 in grade_options_2 else 2
+
+                final_grade_2 = st.selectbox("Assigned Grade", grade_options_2, index=grade_index_2, key="grade_2")
                 
-                final_comment_2 = st.text_area("Objective Comment", value=f"Demonstrated ability to {action_verb} {sel_topic} in {zone.split(':')[0]}.", height=100, key="comment_2")
-                final_action_plan_2 = st.text_area("Action Plan", value=next_steps_2, height=100, key="action_2")
-                final_narrative_2 = st.text_area("Overall Narrative Synthesis", value=auto_narrative_2, height=150, key="narrative_2")
+                if 'comment_2' not in st.session_state:
+                    st.session_state['comment_2'] = f"Demonstrated ability to {action_verb} {sel_topic} in {zone.split(':')[0]}."
+                if 'action_2' not in st.session_state:
+                    st.session_state['action_2'] = next_steps_2
+                if 'narrative_2' not in st.session_state:
+                    st.session_state['narrative_2'] = auto_narrative_2
+
+                final_comment_2 = st.text_area("Objective Comment", height=100, key="comment_2")
+                final_action_plan_2 = st.text_area("Action Plan", height=100, key="action_2")
+                final_narrative_2 = st.text_area("Overall Narrative Synthesis", height=150, key="narrative_2")
                 
                 if st.button("🚀 Log Topic to Master Sheet", type="primary", key="submit_2"):
                     with st.spinner("Writing to database..."):
@@ -671,9 +664,6 @@ def render_daily_operations(resident_name, current_role):
         st.warning(f"No task mappings found for {rotation_subject}.")
         return
 
-    # =========================================================
-    # THE "HOW" - LEARNER/RESIDENT VIEW (Focused Daily Draw)
-    # =========================================================
     if current_role == "learner":
         st.info("💡 **Today's Focus:** Review your daily operational tasks below. Click 'Policy & Application Details' to see how each task connects to your core residency objectives.")
         
@@ -728,9 +718,6 @@ def render_daily_operations(resident_name, current_role):
             
             st.divider()
 
-    # =========================================================
-    # THE "WHAT" - PRECEPTOR / RPD VIEW (Preserved Checklists)
-    # =========================================================
     else:
         grouped_tasks = {}
         action_group = daily_tasks.groupby('Actionable_Activity')
@@ -903,12 +890,6 @@ def render_assignment_tracker():
     )
 
 def log_task_completion(resident_name, task_name, rotation):
-    import json
-    import datetime
-    import gspread
-    from google.oauth2.service_account import Credentials
-    import streamlit as st
-
     try:
         scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
@@ -1087,53 +1068,32 @@ elif user_role == "learner":
     with tab3:
         st.subheader("📅 Upcoming Shifts")
         if not schedule_df.empty:
-            # 1. Convert the dates so Python understands them as actual time, not just text
             temp_sched = schedule_df.copy()
             temp_sched['Start Date'] = pd.to_datetime(temp_sched['Start Date'], errors='coerce')
-            
-            # 2. Find today's date (at midnight, so it includes shifts today)
             today_date = pd.to_datetime(datetime.today().date())
-            
-            # 3. Filter for ONLY the logged-in resident AND dates that are today or in the future
             future_sched = temp_sched[(temp_sched['Resident Name'] == name) & (temp_sched['Start Date'] >= today_date)]
-            
-            # 4. Sort them chronologically and grab the top 5
             my_sched = future_sched.sort_values('Start Date').head(5)
             
             if not my_sched.empty:
-                # Reformat the date to look clean on the screen
                 my_sched['Start Date'] = my_sched['Start Date'].dt.strftime('%Y-%m-%d')
                 st.table(my_sched[['Subject', 'Start Date', 'Start Time']])
             else:
                 st.info("No upcoming shifts scheduled. Enjoy the downtime!")
         
         st.divider()
-        
-        # --- THE NEW STEP COUNTER ---
         render_step_counter(resident_name=name, weekly_goal=5)
-        
         st.divider()
         
-        # --- THE UPDATED RECENT EVALUATIONS TABLE ---
         st.subheader("📈 My 10 Most Recent Evaluations")
-        
-        # Use our new backend function to pull the live 3_Evaluation_Log data!
         live_eval_df = get_evaluation_log() 
         
         if not live_eval_df.empty:
             my_evals = live_eval_df[live_eval_df['Resident Name'] == name].copy()
-            
             if not my_evals.empty:
-                # Use the 'Timestamp' column from the new 3_Evaluation_Log sheet
                 my_evals['Timestamp'] = pd.to_datetime(my_evals['Timestamp'], errors='coerce')
                 recent_10 = my_evals.sort_values(by='Timestamp', ascending=False).head(10)
-                
-                # Format the timestamp for a cleaner display
                 recent_10['Timestamp'] = recent_10['Timestamp'].dt.strftime('%Y-%m-%d %H:%M')
-                
                 st.metric("Total Lifetime Evaluations Logged", len(my_evals))
-                
-                # Hide the index numbers to make it look like a clean B2B dashboard
                 st.dataframe(recent_10, use_container_width=True, hide_index=True)
             else:
                 st.info("No evaluations logged yet. Hunt down a preceptor!")
