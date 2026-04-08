@@ -12,72 +12,72 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 import google.generativeai as genai # NEW: Google AI import
 
-# ==========================================
-# 1. THE BACKEND WRITE-BACK FUNCTION
-# ==========================================
-def log_evaluation_to_sheet(preceptor, resident, rotation, objective, criteria, grade, comment, action_plan, narrative):
+# ==========================================\
+# 1. THE BACKEND WRITE-BACK FUNCTION (UPDATED)
+# ==========================================\
+def log_evaluation_to_sheet(preceptor, resident, rotation, objective, criteria, grade, comment, action_plan, narrative, ai_quality_grade="", pharmacademic_text=""):
     try:
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
+        # Assumes your secrets.toml has the raw json string under [raw_google_json]
         creds = Credentials.from_service_account_info(json.loads(st.secrets["raw_google_json"]), scopes=scopes)
         client = gspread.authorize(creds)
       
         sheet = client.open("01_MASTER_SHEET_EM").worksheet("3_Evaluation_Log")
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
+        # Now writing 12 columns to match your CSV structure
         row_data = [
             timestamp, preceptor, resident, rotation, objective,
-            criteria, grade, comment, action_plan, narrative
+            criteria, grade, comment, action_plan, narrative,
+            ai_quality_grade, pharmacademic_text
         ]
         
         sheet.append_row(row_data)
         return True
     except Exception as e:
-        st.error(f"Failed to securely log the evaluation: {e}")
+        st.error(f"Error writing to Google Sheets: {e}")
         return False
 
-# ==========================================
-# 2. THE AI DICTATION ENGINE (THE "MAGIC")
-# ==========================================
-def generate_ai_evaluation(raw_notes, resident, rotation, topic, zone):
-    """Processes raw dictation into a formal clinical evaluation using Gemini."""
+# ==========================================\
+# 2. AI QUALITY GATE FUNCTION
+# ==========================================\
+def analyze_evaluation_quality(dictated_text, ashp_objective):
+    # Ensure genai is configured with your API key from secrets
+    genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+    
+    # We use gemini-1.5-flash (or 2.5 if available in your env)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    
+    prompt = f"""
+    You are an expert Pharmacy Residency Program Director evaluating a preceptor's dictated log. 
+    Evaluate the following text and assign a Quality Grade (Green, Yellow, Red).
+    
+    Grading Rubric:
+    * Green (Robust): Explicitly identifies the resident's progression on Miller's Entrustment Zones AND aligns with Bloom's Taxonomy. Contains specific clinical context.
+    * Yellow (Borderline): Mentions a clinical topic but defaults to generic praise. Fails to clearly establish the level of entrustment.
+    * Red (Deficient): Too brief, lacks clinical specifics, or provides no actionable feedback.
+    
+    Output Requirements:
+    Return ONLY a strict JSON object with exactly three keys (do not wrap in markdown blocks):
+    1. "grade": String ("Green", "Yellow", or "Red").
+    2. "feedback": String (1-2 sentences of direct coaching explaining *why* it received that grade).
+    3. "suggested_rewrite": String. If Yellow or Red, provide a rewritten version that would score Green. If Green, provide a final, polished version of the text ready to be pasted into PharmAcademic.
+    
+    ASHP Objective Being Evaluated: {ashp_objective}
+    Preceptor's Dictated Text:
+    {dictated_text}
+    """
+    
     try:
-        if "GEMINI_API_KEY" not in st.secrets:
-            st.error("🚨 Missing GEMINI_API_KEY in Streamlit secrets.")
-            return None
-            
-        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-       # Utilizing the latest Flash model for rapid, structured text generation
-        model = genai.GenerativeModel(
-            'gemini-2.5-flash', 
-            generation_config={"response_mime_type": "application/json"}
-        )
-        
-        prompt = f"""
-        You are an expert clinical pharmacy residency program director.
-        Convert these raw dictation notes into a formal residency evaluation.
-        
-        Resident: {resident}
-        Rotation: {rotation}
-        Topic/Action: {topic}
-        Entrustment Zone: {zone}
-        Raw Notes: "{raw_notes}"
-        
-        Respond ONLY with a valid JSON object matching exactly this schema:
-        {{
-            "Grade": "ACHR" or "ACH" or "SP" or "NI" (Choose based on notes: ACHR=independent/mastery, ACH=proficient/Zone 3, SP=progressing/Zone 2, NI=needs improvement/Zone 1),
-            "Comment": "A professional 1-2 sentence objective comment on the performance.",
-            "ActionPlan": "Specific actionable next steps for the resident's growth based on the notes.",
-            "Narrative": "A cohesive overall narrative synthesis of the clinical encounter."
-        }}
-        """
         response = model.generate_content(prompt)
-        return json.loads(response.text)
+        # Clean the response to ensure we only parse the JSON
+        response_text = response.text.strip().replace("```json", "").replace("```", "")
+        return json.loads(response_text)
     except Exception as e:
-        st.error(f"AI Generation Failed: {e}")
-        return None
+        return {"grade": "Error", "feedback": f"AI Parsing Error: {str(e)}", "suggested_rewrite": ""}
 # ==========================================
 # 2B. THE AI SCRIBE ENGINE (ADMIN & ASHP)
 # ==========================================
@@ -133,6 +133,100 @@ def generate_admin_document(doc_type, raw_notes, context=""):
     except Exception as e:
         st.error(f"AI Generation Failed: {e}")
         return None
+# ==========================================\
+# 3. STREAMLIT UI: LOGGING & AI GATE
+# ==========================================\
+st.header("📝 Log Resident Evaluation")
+
+# We use session state to hold the AI's analysis so the page doesn't reset when buttons are clicked
+if 'ai_analysis' not in st.session_state:
+    st.session_state.ai_analysis = None
+if 'current_dictation' not in st.session_state:
+    st.session_state.current_dictation = ""
+
+# --- STEP A: THE INPUT FORM ---
+with st.form("evaluation_form"):
+    col1, col2 = st.columns(2)
+    with col1:
+        # Ideally these options are pulled dynamically from your 3_Users_EM and 7_Rotation_Task_Mapping sheets
+        selected_resident = st.selectbox("Resident", ["Gabby Alvarez", "Brayden Key", "Samantha Richardson"])
+        selected_rotation = st.selectbox("Rotation", ["CORE - 1 - EM", "CORE - 2 - EM", "CORE - 3 - ICU"])
+    with col2:
+        selected_objective = st.selectbox("ASHP Objective", [
+            "R1.1.1 Interact effectively with health care teams...",
+            "R1.1.8 Demonstrate responsibility for patient outcomes."
+        ])
+        eval_grade = st.selectbox("Rating", ["Needs Improvement (NI)", "Satisfactory Progress (SP)", "Achieved (ACH)"])
+        
+    dictated_text = st.text_area("Dictate/Type Evaluation Notes (Narrative)", 
+                                 value=st.session_state.current_dictation, height=150)
+    
+    # This button triggers the AI check, NOT the final database save
+    check_quality = st.form_submit_button("Assess Quality & Format")
+
+# --- STEP B: AI PROCESSING ---
+if check_quality:
+    if len(dictated_text) < 10:
+        st.error("Please provide more detail before assessing.")
+    else:
+        with st.spinner("AI is analyzing evaluation quality..."):
+            st.session_state.current_dictation = dictated_text
+            # Call our helper function
+            st.session_state.ai_analysis = analyze_evaluation_quality(dictated_text, selected_objective)
+
+# --- STEP C: RENDERING THE AI QUALITY GATE ---
+if st.session_state.ai_analysis:
+    analysis = st.session_state.ai_analysis
+    grade = analysis.get("grade", "Error")
+    
+    st.divider()
+    
+    if grade == "Green":
+        st.success(f"✅ **Quality Gate Passed: {grade}**\n\n{analysis['feedback']}")
+        
+    elif grade == "Yellow":
+        st.warning(f"🟡 **Borderline Entry: {grade}**\n\n{analysis['feedback']}")
+        st.info(f"**💡 See the 'Green' standard:**\n\n_{analysis['suggested_rewrite']}_")
+        
+    elif grade == "Red":
+        st.error(f"🔴 **Deficient Entry: {grade}**\n\n{analysis['feedback']}")
+        st.info(f"**💡 Suggested Rewrite:**\n\n{analysis['suggested_rewrite']}")
+        st.warning("Please revise your narrative above and click 'Assess Quality' again.")
+        
+    # --- STEP D: FINAL PHARMACADEMIC COPY & LOGGING ---
+    # We only allow logging if it's Green or Yellow (Red is blocked)
+    if grade in ["Green", "Yellow"]:
+        st.subheader("📋 PharmAcademic Formatting")
+        st.write("Copy the polished text below to paste directly into PharmAcademic:")
+        
+        # Display the formatted text block with the built-in copy icon
+        final_text = analysis['suggested_rewrite']
+        st.code(final_text, language="text")
+        
+        # The final Save button
+        if st.button("Save to Master Log", type="primary"):
+            with st.spinner("Writing to Google Sheets..."):
+                # Call the updated backend function
+                success = log_evaluation_to_sheet(
+                    preceptor=st.session_state.get('name', 'Preceptor'), # Assumes authenticator sets 'name'
+                    resident=selected_resident,
+                    rotation=selected_rotation,
+                    objective=selected_objective,
+                    criteria="Clinical Scenario", # Adjust based on your form
+                    grade=eval_grade,
+                    comment="See Narrative", 
+                    action_plan="See Narrative",
+                    narrative=st.session_state.current_dictation,
+                    ai_quality_grade=grade,
+                    pharmacademic_text=final_text
+                )
+                
+                if success:
+                    st.success("🎉 Evaluation successfully logged to Master Sheet!")
+                    st.balloons()
+                    # Clear session state for the next entry
+                    st.session_state.ai_analysis = None
+                    st.session_state.current_dictation = ""
 # ==========================================
 # 3. THE BACKEND READ FUNCTION (STEP COUNTER)
 # ==========================================
