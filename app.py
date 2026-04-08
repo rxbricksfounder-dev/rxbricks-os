@@ -49,9 +49,9 @@ def generate_ai_evaluation(raw_notes, resident, rotation, topic, zone):
             return None
             
         genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        # Utilizing 1.5 Flash for rapid, structured text generation
+       # Utilizing the latest Flash model for rapid, structured text generation
         model = genai.GenerativeModel(
-            'gemini-1.5-flash', 
+            'gemini-2.5-flash', 
             generation_config={"response_mime_type": "application/json"}
         )
         
