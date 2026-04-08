@@ -1161,34 +1161,34 @@ if user_role == "admin":
                         mime="text/plain"
                     )
 
-        # --- ASHP ACCREDITATION ENGINE ---
-        with doc_tabs[1]:
-            st.subheader("ASHP Progress Report Generator")
-            st.info("Generate formal responses to ASHP citations following the official Guidelines for Progress Reports.")
-            
-            ashp_standard = st.text_input("Cited ASHP Standard / Principle (e.g., 'Standard 3.1.c'):", key="ashp_std")
-            ashp_notes = st.text_area("Raw Notes on Corrective Action (How did we fix this? What is the timeline?):", height=200, key="ashp_raw_notes")
-            
-            if st.button("✨ Draft Formal ASHP Response", type="primary", key="btn_ashp"):
-                if ashp_standard and ashp_notes:
-                    with st.spinner("Translating to ASHP accreditation standards..."):
-                        generated_response = generate_admin_document("ASHP", ashp_notes, ashp_standard)
-                        if generated_response:
-                            st.session_state['draft_ashp'] = generated_response
-                else:
-                    st.warning("Please provide both the Standard and your corrective action notes.")
-                    
-            if 'draft_ashp' in st.session_state:
-                st.write("---")
-                st.subheader("Drafted Progress Report Response")
-                final_ashp = st.text_area("Review and Edit:", value=st.session_state['draft_ashp'], height=300)
+            # --- ASHP ACCREDITATION ENGINE ---
+            with doc_tabs[1]:
+                st.subheader("ASHP Progress Report Generator")
+                st.info("Generate formal responses to ASHP citations following the official Guidelines for Progress Reports.")
                 
-                st.download_button(
-                    label="📥 Download Response",
-                    data=final_ashp,
-                    file_name=f"ASHP_Response_{ashp_standard.replace('.', '_')}.txt",
-                    mime="text/plain"
-                )        
+                ashp_standard = st.text_input("Cited ASHP Standard / Principle (e.g., 'Standard 3.1.c'):", key="ashp_std")
+                ashp_notes = st.text_area("Raw Notes on Corrective Action (How did we fix this? What is the timeline?):", height=200, key="ashp_raw_notes")
+                
+                if st.button("✨ Draft Formal ASHP Response", type="primary", key="btn_ashp"):
+                    if ashp_standard and ashp_notes:
+                        with st.spinner("Translating to ASHP accreditation standards..."):
+                            generated_response = generate_admin_document("ASHP", ashp_notes, ashp_standard)
+                            if generated_response:
+                                st.session_state['draft_ashp'] = generated_response
+                    else:
+                        st.warning("Please provide both the Standard and your corrective action notes.")
+                        
+                if 'draft_ashp' in st.session_state:
+                    st.write("---")
+                    st.subheader("Drafted Progress Report Response")
+                    final_ashp = st.text_area("Review and Edit:", value=st.session_state['draft_ashp'], height=300)
+                    
+                    st.download_button(
+                        label="📥 Download Response",
+                        data=final_ashp,
+                        file_name=f"ASHP_Response_{ashp_standard.replace('.', '_')}.txt",
+                        mime="text/plain"
+                    )        
 # --- PRECEPTOR VIEW ---
 elif user_role == "preceptor":
     st.title("👨‍🏫 Preceptor Dashboard")
