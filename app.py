@@ -678,7 +678,7 @@ def render_daily_operations(resident_name, current_role):
         
         show_all_tasks = st.toggle("View all available rotation tasks", value=False)
         
-        today_str = datetime.date.today().isoformat()
+        today_str = datetime.today().strftime('%Y-%m-%d')
         seed_string = f"{resident_name}_{rotation_subject}_{today_str}"
         daily_seed = zlib.crc32(seed_string.encode())
         
@@ -792,7 +792,7 @@ def render_assignments(resident_name):
 
     if 'Start Date' in user_assignments.columns:
         user_assignments['Start Date'] = pd.to_datetime(user_assignments['Start Date'], errors='coerce')
-        today = pd.to_datetime(datetime.date.today())
+        today = pd.to_datetime(datetime.today())
         upcoming_assign = user_assignments[user_assignments['Start Date'] >= today].sort_values(by='Start Date').head(5)
     else:
         upcoming_assign = user_assignments.head(5)
@@ -1002,7 +1002,7 @@ if user_role == "admin":
 elif user_role == "preceptor":
     st.title("👨‍🏫 Preceptor Dashboard")
     
-    st.info(f"📅 **Today's Date:** {datetime.date.today().strftime('%B %d, %Y')}")
+    st.info(f"📅 **Today's Date:** {datetime.today().strftime('%B %d, %Y')}")
     today_sched = get_todays_schedule()
     if not today_sched.empty:
         st.markdown("### 👥 Resident Schedule Today")
