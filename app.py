@@ -78,7 +78,61 @@ def generate_ai_evaluation(raw_notes, resident, rotation, topic, zone):
     except Exception as e:
         st.error(f"AI Generation Failed: {e}")
         return None
-
+# ==========================================
+# 2B. THE AI SCRIBE ENGINE (ADMIN & ASHP)
+# ==========================================
+def generate_admin_document(doc_type, raw_notes, context=""):
+    """Processes raw notes into formal administrative reports."""
+    try:
+        if "GEMINI_API_KEY" not in st.secrets:
+            st.error("🚨 Missing GEMINI_API_KEY in Streamlit secrets.")
+            return None
+            
+        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+        model = genai.GenerativeModel('gemini-2.5-flash')
+        
+        if doc_type == "RAC":
+            prompt = (
+                "You are an expert clinical pharmacy Residency Program Director.\n"
+                "Take these rough meeting notes and format them strictly into the following RAC Meeting Minutes template.\n"
+                "Use Markdown tables for the structured data. Ensure a professional, objective tone.\n\n"
+                f"Meeting Date/Time Context: {context}\n\n"
+                "TEMPLATE STRUCTURE TO FOLLOW:\n"
+                "# CTMFH-PGY2-EM - Residency Advisory Committee Meeting Minutes\n"
+                "**Chair:** Craig Cocchio\n"
+                "**Location:** Microsoft Teams\n\n"
+                "## Attendance\n"
+                "(List Present and Regrets based on notes)\n\n"
+                "## Agenda Items and Discussion Summary\n"
+                "(Create a Markdown table with columns: # | Topic | Presenter/Lead | Summary of Discussion)\n\n"
+                "## Decisions Made\n"
+                "(Create a Markdown table with columns: Decision Summary | Proposer | Seconder | Outcome)\n\n"
+                "## Action Items\n"
+                "(Create a Markdown table with columns: # | Action Item | Assigned To | Due Date | Status)\n\n"
+                f"RAW NOTES TO PROCESS:\n{raw_notes}"
+            )
+        elif doc_type == "ASHP":
+            prompt = (
+                "You are an expert clinical pharmacy Residency Program Director responding to an ASHP accreditation survey.\n"
+                "Take the cited standard and the raw notes regarding the program's corrective action, and format it into a formal ASHP Progress Report response.\n\n"
+                f"Cited ASHP Standard/Area: {context}\n\n"
+                "Format the output strictly as follows, using highly professional, accreditation-standard language:\n\n"
+                "### ASHP Standard / Principle Cited:\n"
+                "[Insert Standard Here]\n\n"
+                "### Program's Response & Action Plan:\n"
+                "[Synthesize the raw notes into a formal, clear description of exactly how the program has achieved or is progressing toward compliance. Use passive/formal administrative voice.]\n\n"
+                "### Timeline for Completion:\n"
+                "[Extract or propose a realistic timeline based on the notes]\n\n"
+                "### Supporting Evidence to be Attached:\n"
+                "[List logical documents/artifacts that should be attached to prove compliance based on the action plan]\n\n"
+                f"RAW NOTES ON CORRECTIVE ACTION:\n{raw_notes}"
+            )
+            
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        st.error(f"AI Generation Failed: {e}")
+        return None
 # ==========================================
 # 3. THE BACKEND READ FUNCTION (STEP COUNTER)
 # ==========================================
@@ -1003,7 +1057,7 @@ def render_rpd_command_center(weekly_goal=5):
 # --- ADMIN VIEW (RPD) ---
 if user_role == "admin":
     st.title("📈 Program Director Dashboard")
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Reports & Progress", "👨‍🏫 Submit Evaluation", "📅 Daily Operations", "📋 Assignment Tracker", "🎓 Academic Records"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 Reports & Progress", "👨‍🏫 Submit Evaluation", "📅 Daily Operations", "📋 Assignment Tracker", "🎓 Academic Records", "📝 Admin & Accreditation"])
     
     with tab1:
         # INJECT THE NEW MACRO COMMAND CENTER HERE
@@ -1065,7 +1119,76 @@ if user_role == "admin":
             render_resident_profile(target_res, is_preceptor_view=True)
         else:
             st.warning("No residents found in the system.")
-        
+    with tab6:
+            st.header("📝 AI Document & Accreditation Engine")
+            st.caption("Instantly generate formatted RAC meeting minutes and formal ASHP progress reports from shorthand notes.")
+            
+            doc_tabs = st.tabs(["👥 RAC Meeting Minutes", "🏛️ ASHP Progress Report"])
+            
+            # --- RAC MEETING MINUTES GENERATOR ---
+            with doc_tabs[0]:
+                st.subheader("Residency Advisory Committee (RAC) Scribe")
+                st.info("Paste your rough notes from the Teams meeting. The AI will map it to the official CTMFH-PGY2-EM template.")
+                
+                col_date, col_time = st.columns(2)
+                with col_date:
+                    rac_date = st.date_input("Meeting Date", datetime.today())
+                with col_time:
+                    rac_time = st.text_input("Meeting Time", value="1400-1430")
+                    
+                rac_context = f"Date: {rac_date.strftime('%Y-%m-%d')}, Time: {rac_time}"
+                
+                rac_notes = st.text_area("Raw Meeting Notes (Attendees, topics, decisions, who is doing what):", height=200, key="rac_raw_notes")
+                
+                if st.button("✨ Generate Official RAC Minutes", type="primary", key="btn_rac"):
+                    if rac_notes:
+                        with st.spinner("Synthesizing meeting minutes..."):
+                            generated_minutes = generate_admin_document("RAC", rac_notes, rac_context)
+                            if generated_minutes:
+                                st.session_state['draft_rac'] = generated_minutes
+                    else:
+                        st.warning("Please provide meeting notes.")
+                        
+                if 'draft_rac' in st.session_state:
+                    st.write("---")
+                    st.subheader("Drafted Minutes")
+                    final_rac = st.text_area("Review and Edit (Markdown format):", value=st.session_state['draft_rac'], height=400)
+                    
+                    st.download_button(
+                        label="📥 Download as Text File",
+                        data=final_rac,
+                        file_name=f"RAC_Minutes_{rac_date.strftime('%Y-%m-%d')}.txt",
+                        mime="text/plain"
+                    )
+
+        # --- ASHP ACCREDITATION ENGINE ---
+        with doc_tabs[1]:
+            st.subheader("ASHP Progress Report Generator")
+            st.info("Generate formal responses to ASHP citations following the official Guidelines for Progress Reports.")
+            
+            ashp_standard = st.text_input("Cited ASHP Standard / Principle (e.g., 'Standard 3.1.c'):", key="ashp_std")
+            ashp_notes = st.text_area("Raw Notes on Corrective Action (How did we fix this? What is the timeline?):", height=200, key="ashp_raw_notes")
+            
+            if st.button("✨ Draft Formal ASHP Response", type="primary", key="btn_ashp"):
+                if ashp_standard and ashp_notes:
+                    with st.spinner("Translating to ASHP accreditation standards..."):
+                        generated_response = generate_admin_document("ASHP", ashp_notes, ashp_standard)
+                        if generated_response:
+                            st.session_state['draft_ashp'] = generated_response
+                else:
+                    st.warning("Please provide both the Standard and your corrective action notes.")
+                    
+            if 'draft_ashp' in st.session_state:
+                st.write("---")
+                st.subheader("Drafted Progress Report Response")
+                final_ashp = st.text_area("Review and Edit:", value=st.session_state['draft_ashp'], height=300)
+                
+                st.download_button(
+                    label="📥 Download Response",
+                    data=final_ashp,
+                    file_name=f"ASHP_Response_{ashp_standard.replace('.', '_')}.txt",
+                    mime="text/plain"
+                )        
 # --- PRECEPTOR VIEW ---
 elif user_role == "preceptor":
     st.title("👨‍🏫 Preceptor Dashboard")
