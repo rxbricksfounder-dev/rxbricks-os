@@ -551,10 +551,6 @@ def render_resident_profile(resident_name, is_preceptor_view=False):
 # REUSABLE COMPONENT: EVALUATION TOOL (INTEGRATED)
 # =========================================================
 def render_evaluation_tool():
-    if curriculum_df.empty and rotation_tasks_df.empty:
-        st.warning("Curriculum and Task data are unavailable.")
-        return
-
     res_names = users_df[users_df['Role'].str.upper() == 'RESIDENT']['Name'].tolist()
     if not res_names:
         st.warning("No residents found in the system.")
@@ -565,174 +561,80 @@ def render_evaluation_tool():
     
     render_step_tracker(target_res)
     st.write("---")
-    
-    eval_tabs = st.tabs(["⚡ Log Clinical Action", "📚 Evaluate Curriculum Topic"])
-    
-    # ---------------------------------------------------------
-    # TAB 1: ACTION-ORIENTED EVALUATION (WITH AI)
-    # ---------------------------------------------------------
-    with eval_tabs[0]:
-        st.subheader("Action-Oriented Evaluation")
-        if rotation_tasks_df.empty:
-            st.info("No clinical task mappings available.")
-        else:
-            clean_tasks = rotation_tasks_df.dropna(subset=['Actionable_Activity'])
-            all_rotations = sorted(clean_tasks['Rotation_ID'].dropna().unique().tolist())
-            selected_rotation = st.selectbox("1. Select Rotation", options=all_rotations, key="eval_rotation_sel")
-            
-            if selected_rotation:
-                filtered_tasks = clean_tasks[clean_tasks['Rotation_ID'] == selected_rotation]
-                action_mapping = filtered_tasks.groupby('Actionable_Activity')['ASHP_Sub_Objective'].apply(
-                    lambda x: [str(item) for item in x if pd.notna(item)]
-                ).to_dict()
-                
-                selected_action = st.selectbox("2. Select Clinical Action", options=list(action_mapping.keys()), key="eval_action_sel")
-                
-                if selected_action:
-                    available_objs = action_mapping.get(selected_action, [])
-                    applicable_objectives = st.multiselect("ASHP Objectives Satisfied", options=available_objs, default=available_objs, key="eval_action_multi")
-                    zone_action = st.radio("Entrustment Zone:", ["Zone 1: Direct Supervision", "Zone 2: Proactive Supervision", "Zone 3: Reactive Supervision", "Zone 4: Independent"], key="eval_tool_zone_action")
-                    
-                    if "Zone 1" in zone_action: next_steps = "Future encounters should focus on moving toward proactive supervision."
-                    elif "Zone 2" in zone_action: next_steps = "Future encounters should encourage the resident to execute plans with reactive preceptor availability."
-                    elif "Zone 3" in zone_action: next_steps = "The resident is progressing excellently; next steps involve pushing for full independence."
-                    else: next_steps = "The resident has achieved mastery in this area and should continue independent practice."
-                    
-                    objs_str = "; ".join(applicable_objectives) if applicable_objectives else "general clinical expectations"
-                    auto_action_narrative = f"Resident {target_res} was evaluated on '{selected_action}' during the '{selected_rotation}' rotation.\n\nDemonstrated competence toward: {objs_str}"
-                    
-                    # --- AI DICTATION ENGINE (TAB 1) ---
-                    st.write("---")
-                    st.subheader("🎙️ AI Dictation & Auto-Fill")
-                    st.caption("Dump raw thoughts, shorthand, or voice-to-text here. Gemini will instantly format it into formal clinical evaluation language.")
-                    raw_dictation_1 = st.text_area("Raw Preceptor Notes:", height=100, key="dictation_1")
 
-                    if st.button("✨ Draft Evaluation with AI", type="secondary", key="ai_btn_1"):
-                        if raw_dictation_1:
-                            with st.spinner("Processing dictation through Gemini..."):
-                                ai_result = generate_ai_evaluation(raw_dictation_1, target_res, selected_rotation, selected_action, zone_action)
-                                if ai_result:
-                                    st.session_state['grade_1'] = ai_result.get('Grade', 'SP')
-                                    st.session_state['comment_1'] = ai_result.get('Comment', '')
-                                    st.session_state['action_1'] = ai_result.get('ActionPlan', '')
-                                    st.session_state['narrative_1'] = ai_result.get('Narrative', '')
-                                    st.rerun() 
-                        else:
-                            st.warning("Please enter some raw notes first.")
+    # Initialize the session state for the draft
+    if 'eval_draft' not in st.session_state:
+        st.session_state.eval_draft = None
 
-                    # --- REVIEW & SUBMIT ---
-                    st.write("---")
-                    st.subheader("📝 Review & Submit Evaluation")
-                    
-                    # Pull defaults from session state (updated by AI) or use baseline
-                    def_grade_1 = st.session_state.get('grade_1', "SP")
-                    grade_options = ["ACHR", "ACH", "SP", "NI"]
-                    grade_index_1 = grade_options.index(def_grade_1) if def_grade_1 in grade_options else 2
-
-                    final_grade_1 = st.selectbox("Assigned Grade", grade_options, index=grade_index_1, key="grade_1")
-                    
-                    if 'comment_1' not in st.session_state:
-                        st.session_state['comment_1'] = f"Resident performed clinical action '{selected_action}' effectively in {zone_action.split(':')[0]}."
-                    if 'action_1' not in st.session_state:
-                        st.session_state['action_1'] = next_steps
-                    if 'narrative_1' not in st.session_state:
-                        st.session_state['narrative_1'] = auto_action_narrative
-
-                    final_comment_1 = st.text_area("Objective Comment", height=100, key="comment_1")
-                    final_action_plan_1 = st.text_area("Action Plan", height=100, key="action_1")
-                    final_narrative_1 = st.text_area("Overall Narrative Synthesis", height=150, key="narrative_1")
-                    
-                    if st.button("🚀 Log Action to Master Sheet", type="primary", key="submit_1"):
-                        with st.spinner("Writing to database..."):
-                            logged_objs = " | ".join(applicable_objectives) if applicable_objectives else "N/A"
-                            success = log_evaluation_to_sheet(
-                                preceptor=current_preceptor, resident=target_res, rotation=selected_rotation,
-                                objective=logged_objs, criteria=selected_action, grade=final_grade_1,
-                                comment=final_comment_1, action_plan=final_action_plan_1, narrative=final_narrative_1
-                            )
-                            if success:
-                                st.success("✅ Success! Evaluation secured in the Master Log.")
-
-    # ---------------------------------------------------------
-    # TAB 2: CURRICULUM TOPIC EVALUATION (WITH AI)
-    # ---------------------------------------------------------
-    with eval_tabs[1]:
-        st.subheader("Curriculum Topic Evaluation")
-        cats = curriculum_df['Category / Module'].dropna().unique()
-        sel_cat = st.selectbox("Module", cats, key="eval_tool_cat")
+    # The clean, unified evaluation UI
+    col_a, col_b = st.columns(2)
+    with col_a:
+        selected_rotation = st.selectbox("Rotation", ["CORE - 1 - EM", "CORE - 2 - EM", "CORE - 3 - ICU", "ELEC - Tox"], key=f"rot_{target_res}")
+        selected_action = st.selectbox("Clinical Action", ["R1.1.1 (Therapeutic Regimens)", "R1.1.8 (Patient Outcomes)", "R5.1.1 (Medical Emergencies)"], key=f"act_{target_res}")
+    with col_b:
+        zone_action = st.selectbox("Target Entrustment", ["1 - Knows", "2 - Knows How", "3 - Shows How", "4 - Does"], key=f"zone_{target_res}")
         
-        topics = curriculum_df[curriculum_df['Category / Module'] == sel_cat]['Topic'].dropna().unique()
-        if len(topics) == 0:
-            st.warning("No topics found.")
+    raw_dictation_1 = st.text_area("Preceptor Dictation / Rough Notes (Be honest!)", height=100, key=f"dict_{target_res}")
+    
+    if st.button("✨ Assess Quality & Draft Evaluation", type="primary", use_container_width=True, key=f"draft_btn_{target_res}"):
+        if len(raw_dictation_1) < 5:
+            st.warning("Please dictate a few words first!")
         else:
-            sel_topic = st.selectbox("Activity", topics, key="eval_tool_topic")
-            topic_data = curriculum_df[curriculum_df['Topic'] == sel_topic]
+            with st.spinner("AI Coach is analyzing and drafting..."):
+                ai_result = generate_ai_evaluation(raw_dictation_1, target_res, selected_rotation, selected_action, zone_action)
+                if ai_result:
+                    st.session_state.eval_draft = ai_result
+
+    # --- SHOW THE RESULTS (THE WOW FACTOR) ---
+    if st.session_state.eval_draft:
+        draft = st.session_state.eval_draft
+        st.divider()
+        
+        # The Pitch: The AI Scolding
+        q_grade = draft.get("QualityGrade", "Green")
+        if q_grade == "Red":
+            st.error(f"🔴 **AI Preceptor Coach (Deficient Entry):** {draft.get('QualityFeedback')}")
+            st.info("✨ *I have automatically expanded your entry to meet ASHP accreditation standards below. Please review and save.*")
+        elif q_grade == "Yellow":
+            st.warning(f"🟡 **AI Preceptor Coach (Borderline Entry):** {draft.get('QualityFeedback')}")
+        else:
+            st.success(f"✅ **AI Preceptor Coach (Robust Entry):** {draft.get('QualityFeedback')}")
+
+        st.subheader("📋 PharmAcademic Draft")
+        col_c, col_d = st.columns([1, 3])
+        with col_c:
+            # Fallback handling just in case the AI returns an unexpected grade string
+            safe_grade = draft.get("Grade", "SP")
+            if safe_grade not in ["ACHR", "ACH", "SP", "NI"]: safe_grade = "SP"
             
-            if not topic_data.empty:
-                activity_row = topic_data.iloc[0]
-                raw_obj = activity_row.get('ASHP Objective', 'Patient Care Objective')
-                zone = st.radio("Entrustment Zone:", ["Zone 1: Direct Supervision", "Zone 2: Proactive Supervision", "Zone 3: Reactive Supervision", "Zone 4: Independent"], key="eval_tool_zone")
-                eval_rotation_2 = st.text_input("Rotation / Context", value="CORE - EM", key="rot_2")
-                
-                action_verb = str(activity_row.get('Action Verb', 'evaluate')).lower()
-                cog_domain = str(activity_row.get('Cognitive Domain', 'application')).lower()
-                
-                if "Zone 1" in zone: next_steps_2 = "Focus on moving toward proactive supervision by having the resident propose plans."
-                elif "Zone 2" in zone: next_steps_2 = "Execute plans with reactive preceptor availability to build confidence."
-                elif "Zone 3" in zone: next_steps_2 = "Push for full independence on routine cases."
-                else: next_steps_2 = "Achieved mastery; continue independent practice and peer mentoring."
-
-                auto_narrative_2 = f"Resident {target_res} evaluated on {sel_topic}. Operating within {cog_domain}, the resident demonstrated the ability to {action_verb} related to objective {raw_obj}."
-
-                # --- AI DICTATION ENGINE (TAB 2) ---
-                st.write("---")
-                st.subheader("🎙️ AI Dictation & Auto-Fill")
-                st.caption("Dump raw thoughts, shorthand, or voice-to-text here. Gemini will instantly format it into formal clinical evaluation language.")
-                raw_dictation_2 = st.text_area("Raw Preceptor Notes:", height=100, key="dictation_2")
-
-                if st.button("✨ Draft Evaluation with AI", type="secondary", key="ai_btn_2"):
-                    if raw_dictation_2:
-                        with st.spinner("Processing dictation through Gemini..."):
-                            ai_result = generate_ai_evaluation(raw_dictation_2, target_res, eval_rotation_2, sel_topic, zone)
-                            if ai_result:
-                                st.session_state['grade_2'] = ai_result.get('Grade', 'SP')
-                                st.session_state['comment_2'] = ai_result.get('Comment', '')
-                                st.session_state['action_2'] = ai_result.get('ActionPlan', '')
-                                st.session_state['narrative_2'] = ai_result.get('Narrative', '')
-                                st.rerun() 
-                    else:
-                        st.warning("Please enter some raw notes first.")
-
-                # --- REVIEW & SUBMIT ---
-                st.write("---")
-                st.subheader("📝 Review & Submit Evaluation")
-                
-                def_grade_2 = st.session_state.get('grade_2', "SP")
-                grade_options_2 = ["ACHR", "ACH", "SP", "NI"]
-                grade_index_2 = grade_options_2.index(def_grade_2) if def_grade_2 in grade_options_2 else 2
-
-                final_grade_2 = st.selectbox("Assigned Grade", grade_options_2, index=grade_index_2, key="grade_2")
-                
-                if 'comment_2' not in st.session_state:
-                    st.session_state['comment_2'] = f"Demonstrated ability to {action_verb} {sel_topic} in {zone.split(':')[0]}."
-                if 'action_2' not in st.session_state:
-                    st.session_state['action_2'] = next_steps_2
-                if 'narrative_2' not in st.session_state:
-                    st.session_state['narrative_2'] = auto_narrative_2
-
-                final_comment_2 = st.text_area("Objective Comment", height=100, key="comment_2")
-                final_action_plan_2 = st.text_area("Action Plan", height=100, key="action_2")
-                final_narrative_2 = st.text_area("Overall Narrative Synthesis", height=150, key="narrative_2")
-                
-                if st.button("🚀 Log Topic to Master Sheet", type="primary", key="submit_2"):
-                    with st.spinner("Writing to database..."):
-                        success = log_evaluation_to_sheet(
-                            preceptor=current_preceptor, resident=target_res, rotation=eval_rotation_2,
-                            objective=raw_obj, criteria=sel_topic, grade=final_grade_2,
-                            comment=final_comment_2, action_plan=final_action_plan_2, narrative=final_narrative_2
-                        )
-                        if success:
-                            st.success("✅ Success! Evaluation secured in the Master Log.")
+            final_grade = st.selectbox("Grade", ["ACHR", "ACH", "SP", "NI"], 
+                                       index=["ACHR", "ACH", "SP", "NI"].index(safe_grade), 
+                                       key=f"fg_{target_res}")
+        with col_d:
+            final_comment = st.text_input("Comment", value=draft.get("Comment", ""), key=f"fc_{target_res}")
+            
+        final_action = st.text_area("Action Plan", value=draft.get("ActionPlan", ""), height=80, key=f"fa_{target_res}")
+        final_narrative = st.text_area("Overall Narrative (Editable)", value=draft.get("Narrative", ""), height=150, key=f"fn_{target_res}")
+        
+        if st.button("💾 Save to Master Database", type="primary", key=f"save_{target_res}"):
+            with st.spinner("Writing securely to Google Sheets..."):
+                success = log_evaluation_to_sheet(
+                    preceptor=current_preceptor, 
+                    resident=target_res,
+                    rotation=selected_rotation,
+                    objective=selected_action,
+                    criteria="Clinical Scenario",
+                    grade=final_grade,
+                    comment=final_comment,
+                    action_plan=final_action,
+                    narrative=raw_dictation_1, 
+                    ai_quality_grade=q_grade,
+                    pharmacademic_text=final_narrative
+                )
+                if success:
+                    st.success("🎉 Safely logged to Database! Ready for PharmAcademic export.")
+                    st.balloons()
+                    st.session_state.eval_draft = None
                         
 # =========================================================
 # DAILY ACTIVITIES & CLINICAL POLICIES MODULE
