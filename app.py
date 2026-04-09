@@ -42,77 +42,37 @@ def log_evaluation_to_sheet(preceptor, resident, rotation, objective, criteria, 
         return False
 
 # ==========================================\
-# 2. AI QUALITY GATE FUNCTION (UPGRADED TO 2.5 FLASH)
-# ==========================================\
-def analyze_evaluation_quality(dictated_text, ashp_objective):
-    # Ensure genai is configured with your API key from secrets
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    
-    # UPGRADE: Now using 2.5-flash for speed and native JSON support
-    model = genai.GenerativeModel('gemini-2.5-flash')
-    
-    prompt = f"""
-    You are an expert Pharmacy Residency Program Director evaluating a preceptor's dictated log. 
-    Evaluate the following text and assign a Quality Grade (Green, Yellow, Red).
-    
-    Grading Rubric:
-    * Green (Robust): Explicitly identifies the resident's progression on Miller's Entrustment Zones AND aligns with Bloom's Taxonomy. Contains specific clinical context.
-    * Yellow (Borderline): Mentions a clinical topic but defaults to generic praise. Fails to clearly establish the level of entrustment.
-    * Red (Deficient): Too brief, lacks clinical specifics, or provides no actionable feedback.
-    
-    Output Requirements:
-    Return ONLY a JSON object with exactly three keys:
-    "grade": String ("Green", "Yellow", or "Red").
-    "feedback": String (1-2 sentences of direct coaching explaining *why* it received that grade).
-    "suggested_rewrite": String. If Yellow or Red, provide a rewritten version that would score Green. If Green, provide a final, polished version of the text ready to be pasted into PharmAcademic.
-    
-    ASHP Objective Being Evaluated: {ashp_objective}
-    Preceptor's Dictated Text:
-    {dictated_text}
-    """
-    
-    try:
-        # UPGRADE: Using GenerationConfig to force strict, perfect JSON output
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(response_mime_type="application/json")
-        )
-        return json.loads(response.text)
-    except Exception as e:
-        return {"grade": "Error", "feedback": f"AI Parsing Error: {str(e)}", "suggested_rewrite": ""}
-
-# ==========================================\
-# 2.5. THE EVALUATION AUTO-FILL ENGINE (TAB VIEW)
+# 2. THE AI EVALUATION SCRIBE & QUALITY GATE
 # ==========================================\
 def generate_ai_evaluation(raw_dictation, resident_name, rotation, topic, zone):
-    """Takes raw dictation and auto-fills the evaluation form fields using AI."""
-    # Ensure genai is configured with your API key
+    """Evaluates preceptor input AND auto-fills the evaluation form fields using AI."""
     genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
     model = genai.GenerativeModel('gemini-2.5-flash')
     
     prompt = f"""
     You are an expert Pharmacy Residency Program Director.
-    Take the preceptor's raw dictation and format it into a highly professional clinical evaluation.
+    First, evaluate the quality of the raw preceptor dictation. Then, format it into a highly professional clinical evaluation.
     
     Context:
     * Resident: {resident_name}
     * Rotation: {rotation}
-    * Topic/Clinical Action: {topic}
-    * Target Entrustment Zone: {zone}
+    * Topic/Action: {topic}
+    * Target Zone: {zone}
     
     Raw Preceptor Dictation:
     {raw_dictation}
     
     Output Requirements:
-    Return ONLY a strict JSON object with exactly these 4 keys:
-    1. "Grade": Must be exactly one of these strings: "ACHR", "ACH", "SP", or "NI". (Base this on the tone of the dictation).
-    2. "Comment": A 1-2 sentence professional assessment of the resident's performance on this specific objective.
-    3. "ActionPlan": 1-2 sentences detailing specific next steps to move the resident to the next level of independence.
-    4. "Narrative": A comprehensive synthesis paragraph combining all details into a formal evaluation note ready for an accreditation file.
+    Return ONLY a strict JSON object with exactly these 6 keys:
+    1. "QualityGrade": String ("Green", "Yellow", or "Red"). Red means the dictation was lazy or lacked clinical context.
+    2. "QualityFeedback": String (1 short sentence of direct coaching to the preceptor explaining *why* their dictation scored that grade).
+    3. "Grade": Must be one of: "ACHR", "ACH", "SP", or "NI".
+    4. "Comment": A 1-2 sentence professional assessment.
+    5. "ActionPlan": 1-2 sentences detailing specific next steps.
+    6. "Narrative": A comprehensive synthesis paragraph ready for PharmAcademic.
     """
     
     try:
-        # Using native JSON mode for perfect UI integration
         response = model.generate_content(
             prompt,
             generation_config=genai.GenerationConfig(response_mime_type="application/json")
