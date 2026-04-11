@@ -199,18 +199,19 @@ def run_gap_analysis(standard_name, evaluation_data_subset):
     except Exception as e:
         return f"Error running AI Audit: {str(e)}"
 
-# --- PROGRAM SELECTION (This defines the variables below) ---
+# --- 1. SET THE PROGRAM FIRST ---
 selected_program = st.sidebar.selectbox(
-    "Select Program", 
-    list(PROGRAM_CONFIG.keys()), 
+    label="Select Program",
+    options=list(PROGRAM_CONFIG.keys()),
     index=2
-)
+)  # <--- MAKE SURE THIS PARENTHESIS IS HERE
 
+# --- 2. DEFINE THE VARIABLES BASED ON THAT SELECTION ---
 active_config = PROGRAM_CONFIG[selected_program]
 active_sheet_name = active_config["sheet_name"]
 active_standards_tab = active_config["standards_tab"]
 
-# --- DATA LOADING ---
+# --- 3. RUN THE DATA LOADER ---
 (curriculum_df, 
  eval_df, 
  schedule_df, 
