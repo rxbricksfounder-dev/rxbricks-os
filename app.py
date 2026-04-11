@@ -393,7 +393,22 @@ if role in ["RPD", "Preceptor"]:
 # DATABASE HELPERS (REPOSITORY PATTERN)
 # Use these functions to fetch data instead of filtering DataFrames directly in the UI.
 # =========================================================
-
+def get_learner_mapping(users_dataframe, config):
+    """Creates a dictionary mapping { 'L-101': 'Gabby Alvarez' } with a safety fallback."""
+    if users_dataframe.empty: 
+        return {}
+    
+    # 🚨 FIX: Strip whitespace and allow Resident, Learner, or Student
+    valid_roles = ['RESIDENT', 'LEARNER', 'STUDENT']
+    learners = users_dataframe[users_dataframe['Role'].astype(str).str.strip().str.upper().isin(valid_roles)]
+    
+    id_col = config.get("learner_id_column", "Learner_ID")
+    # Safety Net: Fallback to names if the ID column doesn't exist yet
+    if id_col not in users_dataframe.columns:
+        id_col = "Name"
+        
+    return dict(zip(learners[id_col], learners['Name']))
+    
 def get_learner_evals(df, config, learner_name):
     """Fetch all evaluations for a specific learner."""
     if df.empty:
