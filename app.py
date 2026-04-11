@@ -266,7 +266,7 @@ authenticator = stauth.Authenticate(
 user_role = st.session_state.get("role", None)
 
 # Render Login UI
-name, authentication_status, username = authenticator.login('Login', 'main')
+name, authentication_status, username = authenticator.login(location='main')
 # ==========================================
 # 4. THE STEP COUNTER DASHBOARD COMPONENT
 # ==========================================
