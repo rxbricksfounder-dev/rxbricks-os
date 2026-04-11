@@ -18,11 +18,13 @@ import google.generativeai as genai # NEW: Google AI import
 PROGRAM_CONFIG = {
     "PGY2_EM": {
         "program_name": "PGY2 Emergency Medicine",
-        "sheet_name": "01_MASTER_SHEET_EM"
+        "sheet_name": "01_MASTER_SHEET_EM",
+        "standards_tab": "ASHP_Standards"     # <--- ADD THIS
     },
     "APPE_CLINICAL": {
         "program_name": "University of Arizona APPE",
-        "sheet_name": "02_MASTER_SHEET_APPE"
+        "sheet_name": "02_MASTER_SHEET_APPE",
+        "standards_tab": "APPE_Standards"     # <--- ADD THIS (Match your tab name!)
     }
 }
 
@@ -280,24 +282,22 @@ st.sidebar.divider()
 # CORE DATA INGESTION (DYNAMIC API READ)
 # ==========================================\
 @st.cache_data(ttl=60)
-def load_all_data(sheet_name):
+def load_all_data(sheet_name, standards_tab_name):
     try:
         # Authenticate using existing secrets
         scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(json.loads(st.secrets["raw_google_json"]), scopes=scopes)
         client = gspread.authorize(creds)
         
-        # Connect to whichever sheet is selected in the sidebar
         spreadsheet = client.open(sheet_name)
         
-        # Pull data dynamically (Make sure these tab names match EXACTLY in both Google Sheets)
         curr = pd.DataFrame(spreadsheet.worksheet("1_Curriculum").get_all_records())
-        resp = pd.DataFrame(spreadsheet.worksheet("Form Responses 1").get_all_records()) # Keep or update if you rename this tab
+        resp = pd.DataFrame(spreadsheet.worksheet("Form Responses 1").get_all_records())
         sched = pd.DataFrame(spreadsheet.worksheet("4_Schedule").get_all_records())
         user_db = pd.DataFrame(spreadsheet.worksheet("3_Users").get_all_records())
         assign_df = pd.DataFrame(spreadsheet.worksheet("5_Assignments").get_all_records())
         rotation_tasks_df = pd.DataFrame(spreadsheet.worksheet("7_Rotation_Task_Mapping").get_all_records())
-        ashp_df = pd.DataFrame(spreadsheet.worksheet("ASHP_Standards").get_all_records())
+        ashp_df = pd.DataFrame(spreadsheet.worksheet(standards_tab_name).get_all_records()) 
         
         return curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df
         
@@ -305,8 +305,7 @@ def load_all_data(sheet_name):
         st.error(f"⚠️ Database Connection Error. Ensure '{sheet_name}' is shared with your Google Service Account email. Details: {e}")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-# Unpack the data using the currently selected environment
-curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df, ashp_standards_df = load_all_data(active_sheet_name)
+curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df, ashp_standards_df = load_all_data(active_sheet_name, active_config["standards_tab"])
 
 # 4. AUTHENTICATION SETUP
 credentials = {"usernames": {}}
