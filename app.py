@@ -210,9 +210,16 @@ def load_all_data(sheet_name, standards_tab_name):
         client = gspread.authorize(creds)
         spreadsheet = client.open(sheet_name)
     except Exception as e:
-        st.error(f"Failed to connect to Google Drive: {e}")
+        error_msg = f"Failed to connect to Google Drive: {e}"
+        
+        # Unmask the hidden payload inside the response
+        if hasattr(e, 'response'):
+            # Grab the first 500 characters of the payload to see what intercepted us
+            hidden_text = getattr(e.response, 'text', 'No text found')
+            error_msg += f"\n\n🔍 Hidden Response Body:\n{hidden_text[:500]}"
+            
+        st.error(error_msg)
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-
     # --- THE X-RAY SCANNER: Loads tabs individually to catch errors ---
     tab_names = [
         "1_Curriculum", "Form Responses 1", "4_Schedule", 
