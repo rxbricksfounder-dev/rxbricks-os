@@ -195,7 +195,7 @@ def run_gap_analysis(standard_name, evaluation_data_subset):
 # 3. THE BACKEND READ FUNCTION (STEP COUNTER)
 # ==========================================
 @st.cache_data(ttl=60)
-def get_evaluation_log():
+def get_evaluation_log(sheet_name):
     try:
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
@@ -203,7 +203,7 @@ def get_evaluation_log():
         ]
         creds = Credentials.from_service_account_info(json.loads(st.secrets["raw_google_json"]), scopes=scopes)
         client = gspread.authorize(creds)
-        sheet = client.open(active_sheet_name).worksheet("3_Evaluation_Log")
+        sheet = client.open(sheet_name).worksheet("3_Evaluation_Log")
         data = sheet.get_all_records()
         return pd.DataFrame(data)
     except Exception as e:
@@ -216,7 +216,7 @@ def get_evaluation_log():
 def render_step_counter(resident_name, weekly_goal=5):
     st.subheader("🏃‍♂️ Clinical Step Counter")
     
-    df = get_evaluation_log()
+    df = get_evaluation_log(active_sheet_name)
     
     if df.empty:
         st.info("No clinical actions logged yet. Go get some feedback!")
@@ -963,7 +963,7 @@ def render_rpd_command_center(weekly_goal=5):
     st.subheader("🌐 RPD Command Center: Program Overview")
     st.caption("Live aggregate view of clinical evaluation pacing across all residents.")
     
-    live_eval_df = get_evaluation_log()
+    live_eval_df = get_evaluation_log(active_sheet_name)
     
     if live_eval_df.empty:
         st.info("No evaluation data available yet to build macro view.")
@@ -1054,7 +1054,7 @@ if user_role == "admin":
         st.subheader("📊 ASHP Accreditation Step Tracker")
     
         try:
-            eval_df = get_evaluation_log() 
+            eval_df = get_evaluation_log(active_sheet_name) 
         except Exception as e:
             st.error("Could not load Evaluation Log.")
             eval_df = pd.DataFrame()
@@ -1154,7 +1154,7 @@ if user_role == "admin":
             st.info("No legacy evaluation data found.")
         else:
             # Note: We pull from live_eval_df here to make sure the export matches the live database
-            live_eval_df = get_evaluation_log()
+            live_eval_df = get_evaluation_log(active_sheet_name)
             res_list = live_eval_df[active_config["learner_column"]].dropna().unique().tolist()
             if res_list:
                 sel_res = st.selectbox("Review Resident Progress:", res_list, key="admin_report_res")
@@ -1289,7 +1289,7 @@ if user_role == "admin":
                             platform_evidence = "\n--- LIVE PROGRAM DATA ---\n"
                             
                             if attach_evals:
-                                live_eval_df = get_evaluation_log()
+                                live_eval_df = get_evaluation_log(active_sheet_name)
                                 if not live_eval_df.empty:
                                     total_evals = len(live_eval_df)
                                     res_count = live_eval_df[active_config["learner_column"]].nunique()
@@ -1427,7 +1427,7 @@ elif user_role == "learner":
         st.divider()
         
         st.subheader("📈 My 10 Most Recent Evaluations")
-        live_eval_df = get_evaluation_log() 
+        live_eval_df = get_evaluation_log(active_sheet_name) 
         
         if not live_eval_df.empty:
             my_evals = live_eval_df[live_eval_df[active_config["learner_column"]] == name].copy()
