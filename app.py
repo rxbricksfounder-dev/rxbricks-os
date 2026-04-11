@@ -351,6 +351,64 @@ def load_all_data(sheet_name, standards_tab_name):
     # Return the 7 dataframes safely
     return tuple(dfs)
 
+# ==========================================\
+# EXECUTE DATA LOAD & AUTHENTICATION
+# ==========================================\
+# 1. Actually run the data loader we built above
+curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df, ashp_standards_df = load_all_data(active_sheet_name, active_config["standards_tab"])
+
+# 2. Build the Login Credentials from the 3_Users tab
+credentials = {"usernames": {}}
+if not users_df.empty:
+    for _, row in users_df.iterrows():
+        uname = str(row.get('Username', '')).strip()
+        raw_pw = str(row.get('Password', '')).strip()
+        if not uname or not raw_pw: continue
+        
+        hpw = bcrypt.hashpw(raw_pw.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        role = str(row.get('Role', '')).strip().upper()
+        
+        # The robust role-catcher we built earlier!
+        if role in ["RPD", "DIRECTOR", "ADMIN"]: r_internal = "admin"
+        elif role in ["RESIDENT", "LEARNER", "STUDENT"]: r_internal = "learner"
+        else: r_internal = "preceptor"
+        
+        u_tier = str(row.get('Tier', 'Basic')).strip().capitalize()
+        
+        credentials["usernames"][uname] = {
+            "email": str(row.get('Email', '')), "name": str(row.get('Name', '')),
+            "password": hpw, "role": r_internal, "tier": u_tier
+        }
+
+# 3. Render the Login UI
+authenticator = stauth.Authenticate(credentials, "rxbricks_em", "auth_key", cookie_expiry_days=30)
+authenticator.login(location="main")
+
+name = st.session_state.get("name")
+authentication_status = st.session_state.get("authentication_status")
+username = st.session_state.get("username")
+
+# 4. Security Checkpoint
+if authentication_status is False:
+    st.error("Username/password is incorrect")
+    st.stop()
+elif authentication_status is None:
+    st.warning("Please log in to access RxBricks")
+    st.stop()
+
+if username not in credentials["usernames"]:
+    st.error(f"🚨 User database sync error. The profile '{username}' was not found in this environment's 3_Users tab.")
+    st.stop()
+
+# 5. Lock in the User's Identity! (This fixes your crash)
+user_role = credentials["usernames"][username]["role"]
+user_tier = credentials["usernames"][username]["tier"]
+authenticator.logout(location="sidebar")
+st.sidebar.success(f"Logged in: {name} | Tier: {user_tier}")
+
+if user_role in ["admin", "preceptor"]:
+    st.divider()
+
 # =========================================================
 # DATABASE HELPERS (REPOSITORY PATTERN)
 # Use these functions to fetch data instead of filtering DataFrames directly in the UI.
