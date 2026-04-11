@@ -199,6 +199,9 @@ def run_gap_analysis(standard_name, evaluation_data_subset):
     except Exception as e:
         return f"Error running AI Audit: {str(e)}"
 
+# ==========================================
+# 3. THE BACKEND READ FUNCTION
+# ==========================================
 @st.cache_data(ttl=60)
 def load_all_data(sheet_name, standards_tab_name):
     try:
@@ -206,7 +209,13 @@ def load_all_data(sheet_name, standards_tab_name):
         creds = Credentials.from_service_account_info(json.loads(st.secrets["raw_google_json"]), scopes=scopes)
         client = gspread.authorize(creds)
         spreadsheet = client.open(sheet_name)
-        tab_names = ["1_Curriculum", "Form Responses 1", "4_Schedule", "3_Users", "5_Assignments", "7_Rotation_Task_Mapping", standards_tab_name]
+        
+        tab_names = [
+            "1_Curriculum", "Form Responses 1", "4_Schedule", 
+            "3_Users", "5_Assignments", "7_Rotation_Task_Mapping", 
+            standards_tab_name
+        ]
+        
         results = []
         for tab in tab_names:
             try:
@@ -216,15 +225,45 @@ def load_all_data(sheet_name, standards_tab_name):
                 results.append(pd.DataFrame())
         return tuple(results)
     except Exception as e:
-        st.error(f"Connection failed: {e}")
-        return [pd.DataFrame()] * 7
+        # If this fails, we need to know why
+        st.error(f"Google Connection Error: {e}")
+        return tuple([pd.DataFrame()] * 7)
 
+# ==========================================
+# 4. PROGRAM SELECTION & EXECUTION
+# ==========================================
 selected_program = st.sidebar.selectbox("Select Program", list(PROGRAM_CONFIG.keys()), index=2)
 active_config = PROGRAM_CONFIG[selected_program]
 active_sheet_name = active_config["sheet_name"]
 active_standards_tab = active_config["standards_tab"]
 
-(curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df, ashp_standards_df) = load_all_data(active_sheet_name, active_standards_tab)
+# Load the data
+(curriculum_df, eval_df, schedule_df, users_df, 
+ assignments_df, rotation_tasks_df, ashp_standards_df) = load_all_data(active_sheet_name, active_standards_tab)
+
+# INITIALIZE LOGIN DATA
+# If users_df is empty, the login screen will stay blank.
+if users_df.empty:
+    st.error("User database is empty. Please check your '3_Users' tab in Google Sheets.")
+    st.stop()
+
+# Convert users_df to the dictionary format required by the authenticator
+credentials = {"usernames": {}}
+for _, row in users_df.iterrows():
+    credentials["usernames"][str(row['Username'])] = {
+        "name": str(row['Name']),
+        "password": str(row['Password']),
+        "email": str(row['Email']),
+        "role": str(row['Role'])
+    }
+
+# Initialize the authenticator
+authenticator = stauth.Authenticate(
+    credentials,
+    "residency_dashboard",
+    "auth_key",
+    cookie_expiry_days=30
+)
 
 # ==========================================
 # 4. THE STEP COUNTER DASHBOARD COMPONENT
