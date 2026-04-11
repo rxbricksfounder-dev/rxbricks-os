@@ -21,14 +21,16 @@ PROGRAM_CONFIG = {
         "sheet_name": "01_MASTER_SHEET_EM",
         "standards_tab": "ASHP_Standards",
         "evaluation_column": "ASHP Objective",
-        "learner_column": "Resident Name"      # <--- ADD THIS
+        "learner_column": "Resident Name",
+        "standards_column": "ASHP Standards"     # <--- ADD THIS
     },
     "APPE_CLINICAL": {
         "program_name": "University of Arizona APPE",
         "sheet_name": "02_MASTER_SHEET_APPE",
         "standards_tab": "APPE_Standards",
         "evaluation_column": "AACP EPA Evaluated",
-        "learner_column": "Student Name"       # <--- ADD THIS (Must match the CSV header exactly!)
+        "learner_column": "Student Name",
+        "standards_column": "EPA Description"    # <--- ADD THIS (Match your sheet's header!)
     }
 }
 
@@ -1251,11 +1253,11 @@ if user_role == "admin":
                 if not ashp_standards_df.empty:
                     # Assuming the standards are in a column named 'ASHP Standards' (based on your CSV structure)
                     # We filter out empty rows or headers
-                    valid_standards = ashp_standards_df['ASHP Standards'].dropna().tolist()
+                    valid_standards = ashp_standards_df[active_config["standards_column"]].dropna().tolist()
                     clean_standards = [
-                        str(s).strip() for s in valid_standards 
-                        if str(s).strip() != "" and ("Standard" in str(s) or str(s).strip()[0].isdigit())
-                    ]
+                    str(s).strip() for s in valid_standards 
+                    if str(s).strip() != "" and ("Standard" in str(s) or "EPA" in str(s) or "Domain" in str(s) or str(s).strip()[0].isdigit())
+                ]
                 else:
                     clean_standards = ["Standard 3.1.c (Fallback Mode - CSV Not Loaded)"]
     
