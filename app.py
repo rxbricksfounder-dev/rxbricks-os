@@ -344,20 +344,26 @@ ASHP_TO_CLINICAL_ROLE = {
     "ROTATION_EXPECTATION": {"role_name": "Departmental Responsibilities", "ui_header": "### 📋 General Rotation Expectations", "description": "General rotation expectations, meetings, and standard duties."}
 }
 
-# 1. SETTINGS & CONFIG
-st.set_page_config(page_title="RxBricks: EM Trust Verification", layout="wide", page_icon="🧱")
-
-# --- ENVIRONMENT SELECTION ---
-st.sidebar.subheader("🌐 Active Environment")
-selected_env_key == (
-    "Select Program Module:",
+# --- 1. SET THE PROGRAM ---
+selected_program = st.sidebar.selectbox(
+    label="Select Program",
     options=list(PROGRAM_CONFIG.keys()),
-    format_func=lambda x: PROGRAM_CONFIG[x]["program_name"]
+    index=2
 )
-active_config = PROGRAM_CONFIG[selected_env_key]
+
+# --- 2. DEFINE THE VARIABLES ---
+active_config = PROGRAM_CONFIG[selected_program]
 active_sheet_name = active_config["sheet_name"]
 active_standards_tab = active_config["standards_tab"]
-st.sidebar.divider()
+
+# --- 3. RUN THE DATA LOADER ---
+(curriculum_df, 
+ eval_df, 
+ schedule_df, 
+ users_df, 
+ assignments_df, 
+ rotation_tasks_df, 
+ ashp_standards_df) = load_all_data(active_sheet_name, active_standards_tab)
 
 # ==========================================\
 # CORE DATA INGESTION (DYNAMIC API READ)
