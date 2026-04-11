@@ -200,7 +200,7 @@ def run_gap_analysis(standard_name, evaluation_data_subset):
         return f"Error running AI Audit: {str(e)}"
 
 # ==========================================
-# 3. THE BACKEND READ FUNCTION (STEP COUNTER)
+# 3. THE BACKEND READ FUNCTION
 # ==========================================
 @st.cache_data(ttl=60)
 def load_all_data(sheet_name, standards_tab_name):
@@ -228,35 +228,15 @@ def load_all_data(sheet_name, standards_tab_name):
         st.error(f"Connection failed: {e}")
         return [pd.DataFrame()] * 7
 
-# --- STEP 1: DEFINE VARIABLES ---
-# This ensures active_sheet_name exists before it's called
-selected_program = st.sidebar.selectbox(
-    "Select Program", 
-    list(PROGRAM_CONFIG.keys()), 
-    index=2
-)
-
+# ==========================================
+# 4. PROGRAM SELECTION & EXECUTION
+# ==========================================
+selected_program = st.sidebar.selectbox("Select Program", list(PROGRAM_CONFIG.keys()), index=2)
 active_config = PROGRAM_CONFIG[selected_program]
 active_sheet_name = active_config["sheet_name"]
 active_standards_tab = active_config["standards_tab"]
 
-# --- STEP 2: LOAD DATA ---
-(curriculum_df, 
- eval_df, 
- schedule_df, 
- users_df, 
- assignments_df, 
- rotation_tasks_df, 
- ashp_standards_df) = load_all_data(active_sheet_name, active_standards_tab)
-
-# ==========================================
-# 4. EXECUTE DATA LOAD & AUTHENTICATION
-# ==========================================
-# This line runs the function above and catches the 7 results
-curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df, ashp_standards_df = load_all_data(
-    active_sheet_name, 
-    active_config["standards_tab"]
-)
+(curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df, ashp_standards_df) = load_all_data(active_sheet_name, active_standards_tab)
 
 # ==========================================
 # 4. THE STEP COUNTER DASHBOARD COMPONENT
