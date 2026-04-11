@@ -331,44 +331,31 @@ def load_all_data(sheet_name, standards_tab_name):
         client = gspread.authorize(creds)
         spreadsheet = client.open(sheet_name)
     except Exception as e:
-        st.error(f"Failed to connect to Google Drive: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-
-    # --- THE X-RAY SCANNER: Loads tabs individually to catch errors ---
-    tab_names = [
-        "1_Curriculum",
-        "Form Responses 1",
-        "4_Schedule",
-        "3_Users",
-        "5_Assignments",
-        "7_Rotation_Task_Mapping",
-        standards_tab_name
-    ]
-    
-    dfs = []
-    for tab in tab_names:
+        import traceback
+        
+        st.error("🚨 GOOGLE CONNECTION CRASH REPORT 🚨")
+        st.write(f"**1. Error Type:** `{type(e).__name__}`")
+        st.write(f"**2. Base Error Message:** `{str(e)}`")
+        
+        st.write("**3. Ripping open the payload...**")
         try:
-            sheet = spreadsheet.worksheet(tab)
-            df = pd.DataFrame(sheet.get_all_records())
-            if not df.empty:
-                df.replace("", pd.NA, inplace=True)
-                df.dropna(how='all', inplace=True)
-            dfs.append(df)
-        except Exception as e:
-            # If a tab crashes, show a warning but DON'T crash the whole app
-            st.sidebar.error(f"❌ Format Error in tab '{tab}': {e}")
-            dfs.append(pd.DataFrame())
-
-    # Strict Datetime Casting for Schedule
-    sched = dfs[2]
-    if not sched.empty:
-        if 'Start Date' in sched.columns:
-            sched['Start Date'] = pd.to_datetime(sched['Start Date'], errors='coerce')
-        if 'End Date' in sched.columns:
-            sched['End Date'] = pd.to_datetime(sched['End Date'], errors='coerce')
+            # Check the primary response object
+            if hasattr(e, 'response') and hasattr(e.response, 'text'):
+                st.code(e.response.text[:1000], language='html')
+            # Check if it's buried in the error arguments (common with gspread)
+            elif hasattr(e, 'args') and len(e.args) > 0 and hasattr(e.args[0], 'text'):
+                st.code(e.args[0].text[:1000], language='html')
+            # Check if gspread wrapped it in a specific APIError dictionary
+            elif hasattr(e, 'response') and isinstance(e.response, dict):
+                st.json(e.response)
+            else:
+                st.warning("Could not extract raw text. Here is the raw error dictionary:")
+                st.write(e.__dict__)
+        except Exception as inner_e:
+            st.error(f"Failed to unmask payload: {inner_e}")
             
-    # Return the 7 dataframes safely
-    return tuple(dfs)
+        # Return 7 empty dataframes to prevent further crashes down the line
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 # ==========================================\
 # EXECUTE DATA LOAD & AUTHENTICATION
