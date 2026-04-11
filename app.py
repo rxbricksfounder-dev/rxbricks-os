@@ -221,11 +221,10 @@ def load_all_data(sheet_name, standards_tab_name):
             try:
                 data = spreadsheet.worksheet(tab).get_all_records()
                 results.append(pd.DataFrame(data))
-            except:
+            except Exception:
                 results.append(pd.DataFrame())
         return tuple(results)
     except Exception as e:
-        # If this fails, we need to know why
         st.error(f"Google Connection Error: {e}")
         return tuple([pd.DataFrame()] * 7)
 
@@ -237,17 +236,16 @@ active_config = PROGRAM_CONFIG[selected_program]
 active_sheet_name = active_config["sheet_name"]
 active_standards_tab = active_config["standards_tab"]
 
-# Load the data
 (curriculum_df, eval_df, schedule_df, users_df, 
  assignments_df, rotation_tasks_df, ashp_standards_df) = load_all_data(active_sheet_name, active_standards_tab)
 
-# INITIALIZE LOGIN DATA
-# If users_df is empty, the login screen will stay blank.
+# ==========================================
+# 5. AUTHENTICATION SETUP
+# ==========================================
 if users_df.empty:
-    st.error("User database is empty. Please check your '3_Users' tab in Google Sheets.")
+    st.error("User database is empty. Check your '3_Users' tab.")
     st.stop()
 
-# Convert users_df to the dictionary format required by the authenticator
 credentials = {"usernames": {}}
 for _, row in users_df.iterrows():
     credentials["usernames"][str(row['Username'])] = {
@@ -257,7 +255,6 @@ for _, row in users_df.iterrows():
         "role": str(row['Role'])
     }
 
-# Initialize the authenticator
 authenticator = stauth.Authenticate(
     credentials,
     "residency_dashboard",
@@ -265,6 +262,11 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=30
 )
 
+# Initialize role to avoid downstream NameErrors
+user_role = st.session_state.get("role", None)
+
+# Render Login UI
+name, authentication_status, username = authenticator.login('Login', 'main')
 # ==========================================
 # 4. THE STEP COUNTER DASHBOARD COMPONENT
 # ==========================================
