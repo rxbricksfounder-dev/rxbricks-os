@@ -405,9 +405,9 @@ def get_all_learners(users_dataframe):
     if users_dataframe.empty:
         return []
     
-    # Catch multiple terminology variations (Resident, Learner, Student)
+    # Strip whitespace and force uppercase to catch "Resident ", " Learner", etc.
     valid_roles = ['RESIDENT', 'LEARNER', 'STUDENT']
-    return users_dataframe[users_dataframe['Role'].str.upper().isin(valid_roles)]['Name'].tolist()
+    return users_dataframe[users_dataframe['Role'].astype(str).str.strip().str.upper().isin(valid_roles)]['Name'].tolist()
 
 def get_recent_evals(df, config, learner_name, days=7):
     """Fetch evaluations for a learner within the last X days."""
