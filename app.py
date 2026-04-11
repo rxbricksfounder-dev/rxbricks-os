@@ -407,7 +407,10 @@ def get_all_learners(users_dataframe):
     """Fetch a list of all active learners/residents."""
     if users_dataframe.empty:
         return []
-    return users_dataframe[users_dataframe['Role'].str.upper() == 'RESIDENT']['Name'].tolist()
+    
+    # Catch multiple terminology variations (Resident, Learner, Student)
+    valid_roles = ['RESIDENT', 'LEARNER', 'STUDENT']
+    return users_dataframe[users_dataframe['Role'].str.upper().isin(valid_roles)]['Name'].tolist()
 
 def get_recent_evals(df, config, learner_name, days=7):
     """Fetch evaluations for a learner within the last X days."""
