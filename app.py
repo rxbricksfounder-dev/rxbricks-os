@@ -222,15 +222,13 @@ def render_step_counter(resident_name, weekly_goal=5):
         st.info("No clinical actions logged yet. Go get some feedback!")
         return
 
-    my_evals = df[df[active_config["learner_column"]] == resident_name].copy()
-    
+    my_evals = get_learner_evals(df, active_config, resident_name)
+
     if my_evals.empty:
         st.info("You haven't logged any actions yet this week. Hunt down a preceptor!")
         return
-
-    my_evals['Timestamp'] = pd.to_datetime(my_evals['Timestamp'], errors='coerce')
-    seven_days_ago = datetime.now() - pd.Timedelta(days=7)
-    recent_evals = my_evals[my_evals['Timestamp'] >= seven_days_ago]
+    
+    recent_evals = get_recent_evals(df, active_config, resident_name, days=7)
     
     current_steps = len(recent_evals)
     progress_fraction = min(current_steps / weekly_goal, 1.0)
@@ -359,6 +357,32 @@ if role in ["RPD", "Preceptor"]:
     st.divider()
 
 # =========================================================
+# DATABASE HELPERS (REPOSITORY PATTERN)
+# Use these functions to fetch data instead of filtering DataFrames directly in the UI.
+# =========================================================
+
+def get_learner_evals(df, config, learner_name):
+    """Fetch all evaluations for a specific learner."""
+    if df.empty:
+        return pd.DataFrame()
+    return df[df[config["learner_column"]] == learner_name].copy()
+
+def get_all_learners(users_dataframe):
+    """Fetch a list of all active learners/residents."""
+    if users_dataframe.empty:
+        return []
+    return users_dataframe[users_dataframe['Role'].str.upper() == 'RESIDENT']['Name'].tolist()
+
+def get_recent_evals(df, config, learner_name, days=7):
+    """Fetch evaluations for a learner within the last X days."""
+    my_evals = get_learner_evals(df, config, learner_name)
+    if my_evals.empty:
+        return pd.DataFrame()
+    my_evals['Timestamp'] = pd.to_datetime(my_evals['Timestamp'], errors='coerce')
+    cutoff_date = datetime.now() - pd.Timedelta(days=days)
+    return my_evals[my_evals['Timestamp'] >= cutoff_date]
+
+# =========================================================
 # REUSABLE COMPONENT: CURRICULUM VIEWER
 # =========================================================
 def render_curriculum(current_role, current_tier):
@@ -458,7 +482,7 @@ def render_step_tracker(resident_name):
         return
         
     total_topics = len(curriculum_df['Topic'].unique())
-    res_evals = eval_df[eval_df[active_config["learner_column"]] == resident_name]
+    res_evals = get_learner_evals(eval_df, active_config, resident_name)
     
     if 'Activity' in res_evals.columns:
         completed_topics = res_evals['Activity'].nunique()
@@ -481,7 +505,7 @@ def get_milestone_badges(resident_name):
         return {}
 
     module_reqs = curriculum_df.groupby('Category / Module')['Topic'].nunique().to_dict()
-    res_evals = eval_df[eval_df[active_config["learner_column"]] == resident_name]
+    res_evals = get_learner_evals(eval_df, active_config, resident_name)
     
     topic_col = 'Activity' if 'Activity' in res_evals.columns else ('Topic' if 'Topic' in res_evals.columns else None)
     completed_topics = res_evals[topic_col].unique().tolist() if topic_col else []
@@ -549,7 +573,7 @@ def render_resident_profile(resident_name, is_preceptor_view=False):
     if is_preceptor_view:
         st.subheader("📋 Academic & Professional Record")
         st.caption("Official log of clinical competencies for residency accreditation review.")
-        res_evals = eval_df[eval_df[active_config["learner_column"]] == resident_name]
+        res_evals = get_learner_evals(eval_df, active_config, resident_name)
         if not res_evals.empty:
             st.dataframe(res_evals, use_container_width=True)
         else:
@@ -566,7 +590,7 @@ def render_resident_profile(resident_name, is_preceptor_view=False):
             cv_text += "- *Modules currently in progress.*\n"
             
         cv_text += "\n### Advanced Clinical Actions\n"
-        res_evals = eval_df[eval_df[active_config["learner_column"]] == resident_name]
+        res_evals = get_learner_evals(eval_df, active_config, resident_name)
         
         action_col = 'Activity' if 'Activity' in res_evals.columns else ('Topic' if 'Topic' in res_evals.columns else None)
         if action_col and not res_evals.empty:
