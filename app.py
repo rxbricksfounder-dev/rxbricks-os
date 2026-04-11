@@ -335,6 +335,7 @@ selected_env_key = st.sidebar.selectbox(
 )
 active_config = PROGRAM_CONFIG[selected_env_key]
 active_sheet_name = active_config["sheet_name"]
+active_standards_tab = active_config["standards_tab"]
 st.sidebar.divider()
 
 # ==========================================\
