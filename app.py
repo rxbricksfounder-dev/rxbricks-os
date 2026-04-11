@@ -20,13 +20,15 @@ PROGRAM_CONFIG = {
         "program_name": "PGY2 Emergency Medicine",
         "sheet_name": "01_MASTER_SHEET_EM",
         "standards_tab": "ASHP_Standards",
-        "evaluation_column": "ASHP Objective"    # <--- ADD THIS
+        "evaluation_column": "ASHP Objective",
+        "learner_column": "Resident Name"      # <--- ADD THIS
     },
     "APPE_CLINICAL": {
         "program_name": "University of Arizona APPE",
         "sheet_name": "02_MASTER_SHEET_APPE",
         "standards_tab": "APPE_Standards",
-        "evaluation_column": "AACP EPA Evaluated"  # <--- ADD THIS (Match your tab header!)
+        "evaluation_column": "AACP EPA Evaluated",
+        "learner_column": "Student Name"       # <--- ADD THIS (Must match the CSV header exactly!)
     }
 }
 
@@ -1151,7 +1153,7 @@ if user_role == "admin":
         else:
             # Note: We pull from live_eval_df here to make sure the export matches the live database
             live_eval_df = get_evaluation_log()
-            res_list = live_eval_df['Resident Name'].dropna().unique().tolist()
+            res_list = live_eval_df[active_config["learner_column"]].dropna().unique().tolist()
             if res_list:
                 sel_res = st.selectbox("Review Resident Progress:", res_list, key="admin_report_res")
                 render_step_tracker(sel_res)
@@ -1426,7 +1428,7 @@ elif user_role == "learner":
         live_eval_df = get_evaluation_log() 
         
         if not live_eval_df.empty:
-            my_evals = live_eval_df[live_eval_df['Resident Name'] == name].copy()
+            my_evals = live_eval_df[live_eval_df[active_config["learner_column"]] == name].copy()
             if not my_evals.empty:
                 my_evals['Timestamp'] = pd.to_datetime(my_evals['Timestamp'], errors='coerce')
                 recent_10 = my_evals.sort_values(by='Timestamp', ascending=False).head(10)
