@@ -1249,7 +1249,10 @@ if user_role == "admin":
                     # Assuming the standards are in a column named 'ASHP Standards' (based on your CSV structure)
                     # We filter out empty rows or headers
                     valid_standards = ashp_standards_df['ASHP Standards'].dropna().tolist()
-                    clean_standards = [s for s in valid_standards if str(s).strip() != "" and "Standard" in str(s) or str(s)[0].isdigit()]
+                    clean_standards = [
+                        str(s).strip() for s in valid_standards 
+                        if str(s).strip() != "" and ("Standard" in str(s) or str(s).strip()[0].isdigit())
+                    ]
                 else:
                     clean_standards = ["Standard 3.1.c (Fallback Mode - CSV Not Loaded)"]
     
