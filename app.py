@@ -220,7 +220,7 @@ def render_step_counter(resident_name, weekly_goal=5):
         st.info("No clinical actions logged yet. Go get some feedback!")
         return
 
-    my_evals = df[df['Resident Name'] == resident_name].copy()
+    my_evals = df[df[active_config["learner_column"]] == resident_name].copy()
     
     if my_evals.empty:
         st.info("You haven't logged any actions yet this week. Hunt down a preceptor!")
@@ -456,7 +456,7 @@ def render_step_tracker(resident_name):
         return
         
     total_topics = len(curriculum_df['Topic'].unique())
-    res_evals = eval_df[eval_df['Resident Name'] == resident_name]
+    res_evals = eval_df[eval_df[active_config["learner_column"]] == resident_name]
     
     if 'Activity' in res_evals.columns:
         completed_topics = res_evals['Activity'].nunique()
@@ -479,7 +479,7 @@ def get_milestone_badges(resident_name):
         return {}
 
     module_reqs = curriculum_df.groupby('Category / Module')['Topic'].nunique().to_dict()
-    res_evals = eval_df[eval_df['Resident Name'] == resident_name]
+    res_evals = eval_df[eval_df[active_config["learner_column"]] == resident_name]
     
     topic_col = 'Activity' if 'Activity' in res_evals.columns else ('Topic' if 'Topic' in res_evals.columns else None)
     completed_topics = res_evals[topic_col].unique().tolist() if topic_col else []
@@ -547,7 +547,7 @@ def render_resident_profile(resident_name, is_preceptor_view=False):
     if is_preceptor_view:
         st.subheader("📋 Academic & Professional Record")
         st.caption("Official log of clinical competencies for residency accreditation review.")
-        res_evals = eval_df[eval_df['Resident Name'] == resident_name]
+        res_evals = eval_df[eval_df[active_config["learner_column"]] == resident_name]
         if not res_evals.empty:
             st.dataframe(res_evals, use_container_width=True)
         else:
@@ -564,7 +564,7 @@ def render_resident_profile(resident_name, is_preceptor_view=False):
             cv_text += "- *Modules currently in progress.*\n"
             
         cv_text += "\n### Advanced Clinical Actions\n"
-        res_evals = eval_df[eval_df['Resident Name'] == resident_name]
+        res_evals = eval_df[eval_df[active_config["learner_column"]] == resident_name]
         
         action_col = 'Activity' if 'Activity' in res_evals.columns else ('Topic' if 'Topic' in res_evals.columns else None)
         if action_col and not res_evals.empty:
@@ -679,7 +679,7 @@ def get_todays_schedule(target_name=None):
     today_sched = schedule_df[schedule_df[date_col] == today_str]
     
     if target_name:
-        today_sched = today_sched[today_sched['Resident Name'] == target_name]
+        today_sched = today_sched[today_sched[active_config["learner_column"]] == target_name]
     return today_sched
 
 def render_daily_operations(resident_name, current_role):
@@ -980,7 +980,7 @@ def render_rpd_command_center(weekly_goal=5):
         
     macro_data = []
     for res in res_names:
-        res_df = live_eval_df[live_eval_df['Resident Name'] == res]
+        res_df = live_eval_df[live_eval_df[active_config["learner_column"]] == res]
         total_evals = len(res_df)
         recent_evals = len(res_df[res_df['Timestamp'] >= seven_days_ago])
         
@@ -1069,7 +1069,7 @@ if user_role == "admin":
             
             if view_mode == "By Resident":
                 selected_res = st.selectbox("Select Resident to Audit", ["Gabby Alvarez", "Brayden Key", "Samantha Richardson"])
-                working_df = eval_df[eval_df['Resident Name'] == selected_res]
+                working_df = eval_df[eval_df[active_config["learner_column"]] == selected_res]
             else:
                 working_df = eval_df
     
@@ -1159,7 +1159,7 @@ if user_role == "admin":
                 render_step_tracker(sel_res)
                 st.write("---")
                 
-                res_data = live_eval_df[live_eval_df['Resident Name'] == sel_res]
+                res_data = live_eval_df[live_eval_df[active_config["learner_column"]] == sel_res]
                 
                 col1, col2 = st.columns(2)
                 with col1:
@@ -1290,7 +1290,7 @@ if user_role == "admin":
                                 live_eval_df = get_evaluation_log()
                                 if not live_eval_df.empty:
                                     total_evals = len(live_eval_df)
-                                    res_count = live_eval_df['Resident Name'].nunique()
+                                    res_count = live_eval_df[active_config["learner_column"]].nunique()
                                     recent_7_days = len(live_eval_df[pd.to_datetime(live_eval_df['Timestamp'], errors='coerce') >= (datetime.now() - pd.Timedelta(days=7))])
                                     platform_evidence += f"- EVALUATIONS: The program has successfully logged {total_evals} formal clinical evaluations across {res_count} active residents. {recent_7_days} evaluations were completed in the last 7 days alone, demonstrating continuous active preceptor engagement.\n"
                             
@@ -1347,7 +1347,7 @@ elif user_role == "preceptor":
             
             st.write("**Recent Evaluations (Last 10):**")
             if not eval_df.empty:
-                res_evals = eval_df[eval_df['Resident Name'] == stat_res]
+                res_evals = eval_df[eval_df[active_config["learner_column"]] == stat_res]
                 if not res_evals.empty:
                     if 'Date' in res_evals.columns:
                         res_evals['Date'] = pd.to_datetime(res_evals['Date'], errors='coerce')
@@ -1411,7 +1411,7 @@ elif user_role == "learner":
             temp_sched = schedule_df.copy()
             temp_sched['Start Date'] = pd.to_datetime(temp_sched['Start Date'], errors='coerce')
             today_date = pd.to_datetime(datetime.today().date())
-            future_sched = temp_sched[(temp_sched['Resident Name'] == name) & (temp_sched['Start Date'] >= today_date)]
+            future_sched = temp_sched[(temp_sched[active_config["learner_column"]] == name) & (temp_sched['Start Date'] >= today_date)]
             my_sched = future_sched.sort_values('Start Date').head(5)
             
             if not my_sched.empty:
