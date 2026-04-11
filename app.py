@@ -203,34 +203,46 @@ def run_gap_analysis(standard_name, evaluation_data_subset):
 # 3. THE BACKEND READ FUNCTION (STEP COUNTER)
 # ==========================================
 @st.cache_data(ttl=60)
-def get_evaluation_log(sheet_name):
+def load_all_data(sheet_name, standards_tab_name):
     try:
-        scopes = [
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ]
+        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(json.loads(st.secrets["raw_google_json"]), scopes=scopes)
         client = gspread.authorize(creds)
-        sheet = client.open(sheet_name).worksheet("3_Evaluation_Log")
-        data = sheet.get_all_records()
-        
-        df = pd.DataFrame(data)
-        
-        # --- SQL ENFORCEMENT BLOCK ---
-        if not df.empty:
-            # 1. Clean "Ghost" Rows (Google Sheets often passes dicts of empty strings)
-            df.replace("", pd.NA, inplace=True)
-            df.dropna(how='all', inplace=True)
-            
-            # 2. Strict Datetime Casting
-            if 'Timestamp' in df.columns:
-                df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
-        # -----------------------------
-        
-        return df
+        spreadsheet = client.open(sheet_name)
     except Exception as e:
-        st.error(f"Failed to load evaluation log: {e}")
-        return pd.DataFrame()
+        st.error(f"Failed to connect to Google Drive: {e}")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+
+    # --- THE X-RAY SCANNER: Loads tabs individually to catch errors ---
+    tab_names = [
+        "1_Curriculum", "Form Responses 1", "4_Schedule", 
+        "3_Users", "5_Assignments", "7_Rotation_Task_Mapping", standards_tab_name
+    ]
+    
+    dfs = []
+    for tab in tab_names:
+        try:
+            sheet = spreadsheet.worksheet(tab)
+            df = pd.DataFrame(sheet.get_all_records())
+            if not df.empty:
+                df.replace("", pd.NA, inplace=True)
+                df.dropna(how='all', inplace=True)
+            dfs.append(df)
+        except Exception as e:
+            # If a tab crashes, show a warning but DON'T crash the whole app
+            st.sidebar.error(f"❌ Format Error in tab '{tab}': {e}")
+            dfs.append(pd.DataFrame())
+
+    # Strict Datetime Casting for Schedule
+    sched = dfs[2]
+    if not sched.empty:
+        if 'Start Date' in sched.columns:
+            sched['Start Date'] = pd.to_datetime(sched['Start Date'], errors='coerce')
+        if 'End Date' in sched.columns:
+            sched['End Date'] = pd.to_datetime(sched['End Date'], errors='coerce')
+            
+    # Return the 7 dataframes safely
+    return tuple(dfs)
 
 # ==========================================
 # 4. THE STEP COUNTER DASHBOARD COMPONENT
@@ -440,12 +452,10 @@ def get_all_learners(users_dataframe):
     if users_dataframe.empty:
         return []
     
-    # Catch multiple terminology variations and strip hidden whitespace
+    # Strip whitespace and allow Resident, Learner, or Student
     valid_roles = ['RESIDENT', 'LEARNER', 'STUDENT']
-    
-    # Filter the dataframe and return the list of names
     return users_dataframe[users_dataframe['Role'].astype(str).str.strip().str.upper().isin(valid_roles)]['Name'].tolist()
-
+    
 def get_recent_evals(df, config, learner_name, days=7):
     """Fetch evaluations for a learner within the last X days."""
     my_evals = get_learner_evals(df, config, learner_name)
