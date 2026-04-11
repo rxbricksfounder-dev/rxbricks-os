@@ -31,6 +31,14 @@ PROGRAM_CONFIG = {
         "evaluation_column": "AACP EPA Evaluated",
         "learner_column": "Student Name",
         "standards_column": "EPA Description"    # <--- ADD THIS (Match your sheet's header!)
+    },
+    "ABCGTBIO": {
+        "program_name": "Advanced Biologics, Biosimilars, and Cellular Gene-Based Therapy",
+        "sheet_name": "03_MASTER_SHEET_ABCGTBIO",
+        "standards_tab": "ABCGTBIO_Standards",
+        "evaluation_column": "Course Module",
+        "learner_column": "Learner Name",
+        "standards_column": "Competency Objective"    # <--- ADD THIS (Match your sheet's header!)
     }
 }
 
