@@ -204,52 +204,69 @@ def run_gap_analysis(standard_name, evaluation_data_subset):
 # ==========================================
 @st.cache_data(ttl=60)
 def load_all_data(sheet_name, standards_tab_name):
+    """
+    Connects to Google Sheets and pulls all 7 required dataframes.
+    Returns: curriculum, eval, schedule, users, assignments, rotation_tasks, ashp_standards
+    """
     try:
+        # 1. AUTHENTICATION & CONNECTION
         scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(json.loads(st.secrets["raw_google_json"]), scopes=scopes)
         client = gspread.authorize(creds)
         spreadsheet = client.open(sheet_name)
-    except Exception as e:
-        error_msg = f"Failed to connect to Google Drive: {e}"
         
-        # Unmask the hidden payload inside the response
-        if hasattr(e, 'response'):
-            # Grab the first 500 characters of the payload to see what intercepted us
-            hidden_text = getattr(e.response, 'text', 'No text found')
-            error_msg += f"\n\n🔍 Hidden Response Body:\n{hidden_text[:500]}"
-            
-        st.error(error_msg)
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-    # --- THE X-RAY SCANNER: Loads tabs individually to catch errors ---
-    tab_names = [
-        "1_Curriculum", "Form Responses 1", "4_Schedule", 
-        "3_Users", "5_Assignments", "7_Rotation_Task_Mapping", standards_tab_name
-    ]
-    
-    dfs = []
-    for tab in tab_names:
-        try:
-            sheet = spreadsheet.worksheet(tab)
-            df = pd.DataFrame(sheet.get_all_records())
-            if not df.empty:
-                df.replace("", pd.NA, inplace=True)
-                df.dropna(how='all', inplace=True)
-            dfs.append(df)
-        except Exception as e:
-            # If a tab crashes, show a warning but DON'T crash the whole app
-            st.sidebar.error(f"❌ Format Error in tab '{tab}': {e}")
-            dfs.append(pd.DataFrame())
+        # 2. DEFINE THE 7 TABS WE NEED (Order matters!)
+        # Map: Curriculum, Evals, Schedule, Users, Assignments, Task Map, Standards
+        tab_names = [
+            "1_Curriculum", 
+            "Form Responses 1", 
+            "4_Schedule", 
+            "3_Users", 
+            "5_Assignments", 
+            "7_Rotation_Task_Mapping", 
+            standards_tab_name
+        ]
+        
+        results = []
+        for tab in tab_names:
+            try:
+                # Fetch data and convert to DataFrame
+                data = spreadsheet.worksheet(tab).get_all_records()
+                df = pd.DataFrame(data)
+                
+                # Basic cleanup
+                if not df.empty:
+                    df = df.replace('', pd.NA).dropna(how='all')
+                
+                results.append(df)
+            except Exception as e:
+                st.sidebar.warning(f"⚠️ Tab '{tab}' not found or empty. Using blank data.")
+                results.append(pd.DataFrame())
 
-    # Strict Datetime Casting for Schedule
-    sched = dfs[2]
-    if not sched.empty:
-        if 'Start Date' in sched.columns:
-            sched['Start Date'] = pd.to_datetime(sched['Start Date'], errors='coerce')
-        if 'End Date' in sched.columns:
-            sched['End Date'] = pd.to_datetime(sched['End Date'], errors='coerce')
-            
-    # Return the 7 dataframes safely
-    return tuple(dfs)
+        # 3. DATE CLEANUP (Specific to the Schedule tab - index 2)
+        schedule_df = results[2]
+        if not schedule_df.empty:
+            if 'Start Date' in schedule_df.columns:
+                schedule_df['Start Date'] = pd.to_datetime(schedule_df['Start Date'], errors='coerce')
+            if 'End Date' in schedule_df.columns:
+                schedule_df['End Date'] = pd.to_datetime(schedule_df['End Date'], errors='coerce')
+
+        # 4. RETURN ALL 7 DATAFRAMES
+        return tuple(results)
+
+    except Exception as e:
+        st.error(f"🚨 Critical Connection Error: {e}")
+        # Return 7 empty dataframes as a safety fallback
+        return [pd.DataFrame()] * 7
+
+# ==========================================
+# 4. EXECUTE DATA LOAD & AUTHENTICATION
+# ==========================================
+# This line runs the function above and catches the 7 results
+curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df, ashp_standards_df = load_all_data(
+    active_sheet_name, 
+    active_config["standards_tab"]
+)
 
 # ==========================================
 # 4. THE STEP COUNTER DASHBOARD COMPONENT
