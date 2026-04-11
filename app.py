@@ -348,9 +348,16 @@ if not users_df.empty:
         raw_pw = str(row['Password']).strip()
         hpw = bcrypt.hashpw(raw_pw.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         role = str(row['Role']).strip().upper()
-        if role == "RPD": r_internal = "admin"
-        elif role == "RESIDENT": r_internal = "learner"
-        else: r_internal = "preceptor"
+        if role in ["RPD", "DIRECTOR", "ADMIN"]: 
+            r_internal = "admin"
+            
+        # Catch multiple variations for learners (APPE or PGY2)
+        elif role in ["RESIDENT", "STUDENT", "LEARNER"]: 
+            r_internal = "learner"
+            
+        # Default fallback
+        else: 
+            r_internal = "preceptor"
         u_tier = str(row['Tier']).strip().capitalize() if 'Tier' in users_df.columns else "Basic"
         
         credentials["usernames"][uname] = {
