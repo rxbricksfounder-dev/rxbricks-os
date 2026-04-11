@@ -199,6 +199,26 @@ def run_gap_analysis(standard_name, evaluation_data_subset):
     except Exception as e:
         return f"Error running AI Audit: {str(e)}"
 
+# --- PROGRAM SELECTION (This defines the variables below) ---
+selected_program = st.sidebar.selectbox(
+    "Select Program", 
+    list(PROGRAM_CONFIG.keys()), 
+    index=2
+)
+
+active_config = PROGRAM_CONFIG[selected_program]
+active_sheet_name = active_config["sheet_name"]
+active_standards_tab = active_config["standards_tab"]
+
+# --- DATA LOADING ---
+(curriculum_df, 
+ eval_df, 
+ schedule_df, 
+ users_df, 
+ assignments_df, 
+ rotation_tasks_df, 
+ ashp_standards_df) = load_all_data(active_sheet_name, active_standards_tab)
+
 # ==========================================
 # 3. THE BACKEND READ FUNCTION (STEP COUNTER)
 # ==========================================
@@ -328,7 +348,7 @@ st.set_page_config(page_title="RxBricks: EM Trust Verification", layout="wide", 
 
 # --- ENVIRONMENT SELECTION ---
 st.sidebar.subheader("🌐 Active Environment")
-selected_env_key = st.sidebar.selectbox(
+selected_env_key = (
     "Select Program Module:",
     options=list(PROGRAM_CONFIG.keys()),
     format_func=lambda x: PROGRAM_CONFIG[x]["program_name"]
