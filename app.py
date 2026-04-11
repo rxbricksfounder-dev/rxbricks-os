@@ -1036,6 +1036,7 @@ def render_rpd_command_center(weekly_goal=5):
 # =========================================================
 
 # --- ADMIN VIEW (RPD) ---
+user_role = st.session_state.get("role", None)
 if user_role == "admin":        
     st.title("📈 Program Director Dashboard")
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 Reports & Progress", "👨‍🏫 Submit Evaluation", "📅 Daily Operations", "📋 Assignment Tracker", "🎓 Academic Records", "📝 Admin & Accreditation"])
