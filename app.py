@@ -13,6 +13,20 @@ from datetime import datetime
 import google.generativeai as genai # NEW: Google AI import
 
 # ==========================================\
+# 0. MULTI-TENANT PROGRAM CONFIGURATION
+# ==========================================\
+PROGRAM_CONFIG = {
+    "PGY2_EM": {
+        "program_name": "PGY2 Emergency Medicine",
+        "sheet_name": "01_MASTER_SHEET_EM"
+    },
+    "APPE_CLINICAL": {
+        "program_name": "University of Arizona APPE",
+        "sheet_name": "02_MASTER_SHEET_APPE"
+    }
+}
+
+# ==========================================\
 # 1. THE BACKEND WRITE-BACK FUNCTION (UPDATED)
 # ==========================================\
 def log_evaluation_to_sheet(preceptor, resident, rotation, objective, criteria, grade, comment, action_plan, narrative, ai_quality_grade="", pharmacademic_text=""):
@@ -25,7 +39,7 @@ def log_evaluation_to_sheet(preceptor, resident, rotation, objective, criteria, 
         creds = Credentials.from_service_account_info(json.loads(st.secrets["raw_google_json"]), scopes=scopes)
         client = gspread.authorize(creds)
       
-        sheet = client.open("01_MASTER_SHEET_EM").worksheet("3_Evaluation_Log")
+        sheet = client.open(active_sheet_name).worksheet("3_Evaluation_Log")
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         # Now writing 12 columns to match your CSV structure
@@ -181,7 +195,7 @@ def get_evaluation_log():
         ]
         creds = Credentials.from_service_account_info(json.loads(st.secrets["raw_google_json"]), scopes=scopes)
         client = gspread.authorize(creds)
-        sheet = client.open("01_MASTER_SHEET_EM").worksheet("3_Evaluation_Log")
+        sheet = client.open(active_sheet_name).worksheet("3_Evaluation_Log")
         data = sheet.get_all_records()
         return pd.DataFrame(data)
     except Exception as e:
@@ -251,33 +265,48 @@ ASHP_TO_CLINICAL_ROLE = {
 # 1. SETTINGS & CONFIG
 st.set_page_config(page_title="RxBricks: EM Trust Verification", layout="wide", page_icon="🧱")
 
-sheet_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=0&single=true&output=csv"
-responses_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1012642150&single=true&output=csv"
-users_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1844700463&single=true&output=csv"
-schedule_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1966612732&single=true&output=csv"
-assignments_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=1293289954&single=true&output=csv"
-tasks_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=230208050&single=true&output=csv"
-ashp_url = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQSRv0bDNmRR1p97XJtIYKfsUL01mTUfqrCe8wcluUan6hF-pOMRus-NTvxawFlXeawAmSb2yoKfmre/pub?gid=227239585&single=true&output=csv"
+# --- ENVIRONMENT SELECTION ---
+st.sidebar.subheader("🌐 Active Environment")
+selected_env_key = st.sidebar.selectbox(
+    "Select Program Module:",
+    options=list(PROGRAM_CONFIG.keys()),
+    format_func=lambda x: PROGRAM_CONFIG[x]["program_name"]
+)
+active_config = PROGRAM_CONFIG[selected_env_key]
+active_sheet_name = active_config["sheet_name"]
+st.sidebar.divider()
 
+# ==========================================\
+# CORE DATA INGESTION (DYNAMIC API READ)
+# ==========================================\
 @st.cache_data(ttl=60)
-def load_all_data():
-    def clean(u): return u.strip() if isinstance(u, str) else u
+def load_all_data(sheet_name):
     try:
-        curr = pd.read_csv(clean(sheet_url))
-        resp = pd.read_csv(clean(responses_url))
-        sched = pd.read_csv(clean(schedule_url))
-        user_db = pd.read_csv(clean(users_url))
-        assign_df = pd.read_csv(clean(assignments_url))
-        rotation_tasks_df = pd.read_csv(clean(tasks_url))
-        # NEW: Load the ASHP framework
-        ashp_df = pd.read_csv(clean(ashp_url))
+        # Authenticate using existing secrets
+        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        creds = Credentials.from_service_account_info(json.loads(st.secrets["raw_google_json"]), scopes=scopes)
+        client = gspread.authorize(creds)
+        
+        # Connect to whichever sheet is selected in the sidebar
+        spreadsheet = client.open(sheet_name)
+        
+        # Pull data dynamically (Make sure these tab names match EXACTLY in both Google Sheets)
+        curr = pd.DataFrame(spreadsheet.worksheet("1_Curriculum").get_all_records())
+        resp = pd.DataFrame(spreadsheet.worksheet("Form Responses 1").get_all_records()) # Keep or update if you rename this tab
+        sched = pd.DataFrame(spreadsheet.worksheet("4_Schedule").get_all_records())
+        user_db = pd.DataFrame(spreadsheet.worksheet("3_Users").get_all_records())
+        assign_df = pd.DataFrame(spreadsheet.worksheet("5_Assignments").get_all_records())
+        rotation_tasks_df = pd.DataFrame(spreadsheet.worksheet("7_Rotation_Task_Mapping").get_all_records())
+        ashp_df = pd.DataFrame(spreadsheet.worksheet("ASHP_Standards").get_all_records())
+        
         return curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df
+        
     except Exception as e:
-        st.error(f"⚠️ Link Verification Error: {e}")
+        st.error(f"⚠️ Database Connection Error. Ensure '{sheet_name}' is shared with your Google Service Account email. Details: {e}")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-# Unpack the 7th dataframe
-curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df, ashp_standards_df = load_all_data()
+# Unpack the data using the currently selected environment
+curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df, ashp_standards_df = load_all_data(active_sheet_name)
 
 # 4. AUTHENTICATION SETUP
 credentials = {"usernames": {}}
