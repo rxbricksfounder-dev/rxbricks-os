@@ -262,16 +262,11 @@ authenticator = stauth.Authenticate(
     cookie_expiry_days=30
 )
 
-# Initialize role to avoid downstream NameErrors
+# Initialize user_role early to prevent downstream NameErrors
 user_role = st.session_state.get("role", None)
 
-# Updated for streamlit-authenticator v0.4.0+
+# Render Login UI - Updated for v0.4.0+
 authenticator.login(location='main')
-
-# Retrieve values from session state instead of direct assignment
-authentication_status = st.session_state.get("authentication_status")
-name = st.session_state.get("name")
-username = st.session_state.get("username")
 
 # ==========================================
 # 4. THE STEP COUNTER DASHBOARD COMPONENT
