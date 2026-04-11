@@ -307,95 +307,49 @@ st.sidebar.divider()
 @st.cache_data(ttl=60)
 def load_all_data(sheet_name, standards_tab_name):
     try:
-        # Authenticate using existing secrets
         scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
         creds = Credentials.from_service_account_info(json.loads(st.secrets["raw_google_json"]), scopes=scopes)
         client = gspread.authorize(creds)
-        
         spreadsheet = client.open(sheet_name)
-        
-        # Pull data dynamically 
-        curr = pd.DataFrame(spreadsheet.worksheet("1_Curriculum").get_all_records())
-        resp = pd.DataFrame(spreadsheet.worksheet("Form Responses 1").get_all_records()) 
-        sched = pd.DataFrame(spreadsheet.worksheet("4_Schedule").get_all_records())
-        user_db = pd.DataFrame(spreadsheet.worksheet("3_Users").get_all_records())
-        assign_df = pd.DataFrame(spreadsheet.worksheet("5_Assignments").get_all_records())
-        rotation_tasks_df = pd.DataFrame(spreadsheet.worksheet("7_Rotation_Task_Mapping").get_all_records())
-        ashp_df = pd.DataFrame(spreadsheet.worksheet(standards_tab_name).get_all_records())
-        
-        # --- SQL ENFORCEMENT BLOCK ---
-        # 1. Strip Ghost Rows from all tables
-        for df in [curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df]:
-            df.replace("", pd.NA, inplace=True)
-            df.dropna(how='all', inplace=True)
-            
-        # 2. Strict Datetime Casting for Scheduling
-        if not sched.empty:
-            if 'Start Date' in sched.columns:
-                sched['Start Date'] = pd.to_datetime(sched['Start Date'], errors='coerce')
-            if 'End Date' in sched.columns:
-                sched['End Date'] = pd.to_datetime(sched['End Date'], errors='coerce')
-        # -----------------------------
-        
-        return curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df
-        
     except Exception as e:
-        st.error(f"⚠️ Database Connection Error. Ensure '{sheet_name}' is shared with your Google Service Account email. Details: {e}")
+        st.error(f"Failed to connect to Google Drive: {e}")
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df, ashp_standards_df = load_all_data(active_sheet_name, active_config["standards_tab"])
+    # --- THE X-RAY SCANNER: Loads tabs individually to catch errors ---
+    tab_names = [
+        "1_Curriculum",
+        "Form Responses 1",
+        "4_Schedule",
+        "3_Users",
+        "5_Assignments",
+        "7_Rotation_Task_Mapping",
+        standards_tab_name
+    ]
+    
+    dfs = []
+    for tab in tab_names:
+        try:
+            sheet = spreadsheet.worksheet(tab)
+            df = pd.DataFrame(sheet.get_all_records())
+            if not df.empty:
+                df.replace("", pd.NA, inplace=True)
+                df.dropna(how='all', inplace=True)
+            dfs.append(df)
+        except Exception as e:
+            # If a tab crashes, show a warning but DON'T crash the whole app
+            st.sidebar.error(f"❌ Format Error in tab '{tab}': {e}")
+            dfs.append(pd.DataFrame())
 
-# 4. AUTHENTICATION SETUP
-credentials = {"usernames": {}}
-if not users_df.empty:
-    for _, row in users_df.iterrows():
-        uname = str(row['Username']).strip()
-        raw_pw = str(row['Password']).strip()
-        hpw = bcrypt.hashpw(raw_pw.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        role = str(row['Role']).strip().upper()
-        if role in ["RPD", "DIRECTOR", "ADMIN"]: 
-            r_internal = "admin"
+    # Strict Datetime Casting for Schedule
+    sched = dfs[2]
+    if not sched.empty:
+        if 'Start Date' in sched.columns:
+            sched['Start Date'] = pd.to_datetime(sched['Start Date'], errors='coerce')
+        if 'End Date' in sched.columns:
+            sched['End Date'] = pd.to_datetime(sched['End Date'], errors='coerce')
             
-        # Catch multiple variations for learners (APPE or PGY2)
-        elif role in ["RESIDENT", "STUDENT", "LEARNER"]: 
-            r_internal = "learner"
-            
-        # Default fallback
-        else: 
-            r_internal = "preceptor"
-        u_tier = str(row['Tier']).strip().capitalize() if 'Tier' in users_df.columns else "Basic"
-        
-        credentials["usernames"][uname] = {
-            "email": str(row['Email']), "name": str(row['Name']),
-            "password": hpw, "role": r_internal, "tier": u_tier
-        }
-
-authenticator = stauth.Authenticate(credentials, "rxbricks_em", "auth_key", cookie_expiry_days=30)
-authenticator.login(location="main")
-
-name = st.session_state.get("name")
-authentication_status = st.session_state.get("authentication_status")
-username = st.session_state.get("username")
-
-if authentication_status is False:
-    st.error("Username/password is incorrect")
-    st.stop()
-elif authentication_status is None:
-    st.warning("Please log in to access RxBricks EM")
-    st.stop()
-
-# --- NEW SAFETY CHECK ---
-if username not in credentials["usernames"]:
-    st.error("🚨 User database sync error. The app couldn't find your profile. This usually means one of your Google Sheet links (like the new ASHP one) is broken or not published as a CSV, causing the database to load empty.")
-    st.stop()
-
-user_role = credentials["usernames"][username]["role"]
-user_tier = credentials["usernames"][username]["tier"]
-authenticator.logout(location="sidebar")
-st.sidebar.success(f"Logged in: {name} | Tier: {user_tier}")
-
-if role in ["RPD", "Preceptor"]:
-    st.divider()
+    # Return the 7 dataframes safely
+    return tuple(dfs)
 
 # =========================================================
 # DATABASE HELPERS (REPOSITORY PATTERN)
