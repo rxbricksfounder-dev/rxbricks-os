@@ -349,7 +349,7 @@ st.set_page_config(page_title="RxBricks: EM Trust Verification", layout="wide", 
 
 # --- ENVIRONMENT SELECTION ---
 st.sidebar.subheader("🌐 Active Environment")
-selected_env_key = (
+selected_env_key == (
     "Select Program Module:",
     options=list(PROGRAM_CONFIG.keys()),
     format_func=lambda x: PROGRAM_CONFIG[x]["program_name"]
