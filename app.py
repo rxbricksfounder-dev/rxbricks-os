@@ -420,8 +420,10 @@ def get_all_learners(users_dataframe):
     if users_dataframe.empty:
         return []
     
-    # Strip whitespace and force uppercase to catch "Resident ", " Learner", etc.
+    # Catch multiple terminology variations and strip hidden whitespace
     valid_roles = ['RESIDENT', 'LEARNER', 'STUDENT']
+    
+    # Filter the dataframe and return the list of names
     return users_dataframe[users_dataframe['Role'].astype(str).str.strip().str.upper().isin(valid_roles)]['Name'].tolist()
 
 def get_recent_evals(df, config, learner_name, days=7):
