@@ -19,12 +19,14 @@ PROGRAM_CONFIG = {
     "PGY2_EM": {
         "program_name": "PGY2 Emergency Medicine",
         "sheet_name": "01_MASTER_SHEET_EM",
-        "standards_tab": "ASHP_Standards"     # <--- ADD THIS
+        "standards_tab": "ASHP_Standards",
+        "evaluation_column": "ASHP Objective"    # <--- ADD THIS
     },
     "APPE_CLINICAL": {
         "program_name": "University of Arizona APPE",
         "sheet_name": "02_MASTER_SHEET_APPE",
-        "standards_tab": "APPE_Standards"     # <--- ADD THIS (Match your tab name!)
+        "standards_tab": "APPE_Standards",
+        "evaluation_column": "AACP EPA Evaluated"  # <--- ADD THIS (Match your tab header!)
     }
 }
 
@@ -1079,7 +1081,7 @@ if user_role == "admin":
                 with column:
                     for goal_name, required_count in items_to_render:
                         objective_code = goal_name.split(" ")[0] 
-                        current_count = len(working_df[working_df['ASHP Objective'].str.contains(objective_code, na=False)])
+                        current_count = len(working_df[working_df[active_config["evaluation_column"]].str.contains(objective_code, na=False)])
                         progress_pct = min(current_count / required_count, 1.0)
                         
                         st.write(f"**{goal_name}**")
