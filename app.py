@@ -228,6 +228,7 @@ def get_evaluation_log(sheet_name):
 # 4. THE STEP COUNTER DASHBOARD COMPONENT
 # ==========================================
 def render_step_counter(resident_name, weekly_goal=5):
+    """Frontend UI Function: Only draws components on the screen."""
     st.subheader("🏃‍♂️ Clinical Step Counter")
     
     df = get_evaluation_log(active_sheet_name)
@@ -235,18 +236,11 @@ def render_step_counter(resident_name, weekly_goal=5):
     if df.empty:
         st.info("No clinical actions logged yet. Go get some feedback!")
         return
-
-    my_evals = get_learner_evals(df, active_config, resident_name)
-
-    if my_evals.empty:
-        st.info("You haven't logged any actions yet this week. Hunt down a preceptor!")
-        return
     
-    recent_evals = get_recent_evals(df, active_config, resident_name, days=7)
+    # 1. Ask the backend for the pre-calculated math
+    current_steps, progress_fraction = calculate_weekly_steps(df, active_config, resident_name, weekly_goal)
     
-    current_steps = len(recent_evals)
-    progress_fraction = min(current_steps / weekly_goal, 1.0)
-    
+    # 2. Draw the visual UI
     col1, col2 = st.columns([1, 3])
     with col1:
         st.metric("Actions (Last 7 Days)", f"{current_steps} / {weekly_goal}")
@@ -254,8 +248,11 @@ def render_step_counter(resident_name, weekly_goal=5):
         st.write("")
         st.progress(progress_fraction)
         
+    # 3. Dynamic Coaching Feedback
     if current_steps >= weekly_goal:
         st.success("🎯 Weekly goal met! Excellent job driving your clinical autonomy.")
+    elif current_steps == 0:
+        st.info("You haven't logged any actions yet this week. Hunt down a preceptor!")
     else:
         st.caption(f"You need {weekly_goal - current_steps} more logged actions to hit your weekly target.")
         
@@ -439,6 +436,16 @@ def calculate_topic_progress(curriculum_dataframe, eval_dataframe, config, resid
     pct = min(completed / total_topics, 1.0) if total_topics > 0 else 0.0
     return completed, total_topics, pct
 
+def calculate_weekly_steps(df, config, resident_name, weekly_goal=5, days=7):
+    """Backend Data Function: Calculates recent evaluation volume."""
+    if df.empty:
+        return 0, 0.0
+    
+    recent_evals = get_recent_evals(df, config, resident_name, days=days)
+    current_steps = len(recent_evals)
+    progress_fraction = min(current_steps / weekly_goal, 1.0)
+    
+    return current_steps, progress_fraction
 # =========================================================
 # REUSABLE COMPONENT: CURRICULUM VIEWER
 # =========================================================
