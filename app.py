@@ -418,6 +418,24 @@ def get_recent_evals(df, config, learner_name, days=7):
     cutoff_date = datetime.now() - pd.Timedelta(days=days)
     return my_evals[my_evals['Timestamp'] >= cutoff_date]
 
+def calculate_topic_progress(curriculum_dataframe, eval_dataframe, config, resident_name):
+    """Backend Data Function: Calculates the math for the step tracker."""
+    if eval_dataframe.empty or curriculum_dataframe.empty:
+        return 0, 0, 0.0
+        
+    total_topics = len(curriculum_dataframe['Topic'].unique())
+    res_evals = get_learner_evals(eval_dataframe, config, resident_name)
+    
+    if 'Activity' in res_evals.columns:
+        completed = res_evals['Activity'].nunique()
+    elif 'Topic' in res_evals.columns:
+        completed = res_evals['Topic'].nunique()
+    else:
+        completed = len(res_evals) 
+        
+    pct = min(completed / total_topics, 1.0) if total_topics > 0 else 0.0
+    return completed, total_topics, pct
+
 # =========================================================
 # REUSABLE COMPONENT: CURRICULUM VIEWER
 # =========================================================
@@ -512,27 +530,18 @@ def render_curriculum(current_role, current_tier):
 # REUSABLE COMPONENT: STEP TRACKER
 # =========================================================
 def render_step_tracker(resident_name):
+    """Frontend UI Function: Only draws components on the screen."""
     if eval_df.empty or curriculum_df.empty:
         st.caption("👟 **Step Tracker:** Awaiting evaluation data...")
         st.progress(0.0)
         return
         
-    total_topics = len(curriculum_df['Topic'].unique())
-    res_evals = get_learner_evals(eval_df, active_config, resident_name)
+    # 1. Ask the backend for the pre-calculated math
+    completed, total, pct = calculate_topic_progress(curriculum_df, eval_df, active_config, resident_name)
     
-    if 'Activity' in res_evals.columns:
-        completed_topics = res_evals['Activity'].nunique()
-    elif 'Topic' in res_evals.columns:
-        completed_topics = res_evals['Topic'].nunique()
-    else:
-        completed_topics = len(res_evals) 
-        
-    progress_pct = min(completed_topics / total_topics, 1.0) if total_topics > 0 else 0.0
-    
-    st.markdown(f"**👟 Step Tracker:** `{completed_topics} / {total_topics}` Core Topics Evaluated")
-    st.progress(progress_pct)
-
-
+    # 2. Draw the visual UI
+    st.markdown(f"**👟 Step Tracker:** `{completed} / {total}` Core Topics Evaluated")
+    st.progress(pct)
 # =========================================================
 # REUSABLE COMPONENT: MILESTONES & PROFILE
 # =========================================================
