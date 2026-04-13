@@ -844,10 +844,18 @@ if user_role == "admin":
     with tab1:
         render_rpd_command_center(weekly_goal=5)
         st.write("---")    
+        
         st.subheader("📊 ASHP Accreditation Step Tracker")
         live_eval_df = get_evaluation_log(active_sheet_name) 
     
         if not live_eval_df.empty:
+            target_goals = {
+                "R1.1.1 (Therapeutic Regimens)": 10,
+                "R1.1.8 (Patient Outcomes)": 10,
+                "R5.1.1 (Medical Emergencies)": 5,
+                "E7.1.1 (Pre-hospital Teamwork)": 3
+            }
+            
             view_mode = st.radio("Select View", ["Program Overview", "By Resident"], horizontal=True)
             if view_mode == "By Resident":
                 selected_res_id = st.selectbox(
@@ -858,13 +866,71 @@ if user_role == "admin":
                 working_df = get_learner_evals(live_eval_df, active_config, selected_res_id)
             else:
                 working_df = live_eval_df
+
+            st.divider()
+            col1, col2 = st.columns(2)
+            items = list(target_goals.items())
+            half_point = len(items) // 2
     
+            def render_progress(column, items_to_render):
+                with column:
+                    for goal_name, required_count in items_to_render:
+                        objective_code = goal_name.split(" ")[0] 
+                        current_count = len(working_df[working_df['ASHP Objective'].astype(str).str.contains(objective_code, na=False)])
+                        progress_pct = min(current_count / required_count, 1.0)
+                        
+                        st.write(f"**{goal_name}**")
+                        st.progress(progress_pct)
+                        if current_count >= required_count:
+                            st.caption(f"✅ Target Met: {current_count} / {required_count} logged")
+                        else:
+                            st.caption(f"⏳ Pending: {current_count} / {required_count} logged")
+                        st.write("")
+    
+            render_progress(col1, items[:half_point])
+            render_progress(col2, items[half_point:])
+        else:
+            st.info("No evaluation data found. Start logging evaluations to see progress here!")
+
+        # --- AI GAP ANALYSIS TOOL ---
+        st.divider()
+        st.subheader("🤖 AI Program Gap Analysis")
+        col_audit1, col_audit2 = st.columns([2, 1])
+        
+        with col_audit1:
+            target_audit = st.selectbox("Select Standard to Audit", ["R1.1.1 (Therapeutic Regimens)", "R1.1.8 (Patient Outcomes)", "R5.1.1 (Medical Emergencies)", "E7.1.1 (Pre-hospital Teamwork)"])
+        with col_audit2:
+            st.write("") 
+            st.write("")
+            run_audit = st.button("Run AI Audit", type="primary", use_container_width=True)
+            
+        if run_audit and not live_eval_df.empty:
+            audit_code = target_audit.split(" ")[0]
+            audit_df = live_eval_df[live_eval_df['ASHP Objective'].astype(str).str.contains(audit_code, na=False)]
+            
+            if len(audit_df) == 0:
+                st.warning(f"No evaluations found for {target_audit}. Start logging to run an audit.")
+            else:
+                with st.spinner(f"AI Surveyor analyzing {len(audit_df)} evaluations..."):
+                    audit_report = run_gap_analysis(target_audit, audit_df)
+                    with st.expander(f"📄 Official Audit Report: {target_audit}", expanded=True):
+                        st.markdown(audit_report)
+    
+        # --- GRANULAR TRACKING ---
         st.divider()
         st.subheader("Granular Resident Assignment Tracking")
-        if learner_dict:
+        if learner_dict and not live_eval_df.empty:
             sel_res_id = st.selectbox("Review Resident Progress:", list(learner_dict.keys()), format_func=lambda x: learner_dict.get(x, x), key="admin_report_res")
             render_step_tracker(sel_res_id)
             res_data = get_learner_evals(live_eval_df, active_config, sel_res_id)
+            
+            col_a, col_b = st.columns(2)
+            with col_a:
+                st.metric(f"Total Completed Evaluations", len(res_data))
+            with col_b:
+                csv_export = res_data.to_csv(index=False).encode('utf-8')
+                st.download_button(label="📥 Export Resident Data (CSV)", data=csv_export, file_name=f"eval_report_{datetime.today().strftime('%Y-%m-%d')}.csv", mime='text/csv', type="primary")
+            
             st.dataframe(res_data, use_container_width=True, hide_index=True)
                 
     with tab2:
@@ -911,38 +977,77 @@ if user_role == "admin":
             render_resident_profile(target_res_id, is_preceptor_view=True)
             
     with tab6:
-        st.header("📝 AI Document Engine")
-        st.info("Transform rough notes into formal program documentation using the Gemini AI Engine.")
+        st.header("📝 AI Document & Accreditation Engine")
+        st.caption("Instantly generate formatted RAC meeting minutes and formal ASHP progress reports from shorthand notes.")
         
-        doc_mode = st.radio("Select Output Format:", ["RAC Meeting Minutes", "ASHP Corrective Action Report"], horizontal=True)
-        st.divider()
+        doc_tabs = st.tabs(["👥 RAC Meeting Minutes", "🏛️ ASHP Progress Report"])
         
-        if doc_mode == "RAC Meeting Minutes":
-            meeting_date = st.date_input("Meeting Date")
-            raw_notes = st.text_area("Rough Meeting Notes (Attendees, Topics, Decisions, Action Items)", height=150)
+        with doc_tabs[0]:
+            st.subheader("Residency Advisory Committee (RAC) Scribe")
+            col_date, col_time = st.columns(2)
+            with col_date: rac_date = st.date_input("Meeting Date", datetime.today())
+            with col_time: rac_time = st.text_input("Meeting Time", value="1400-1430")
+                
+            rac_context = f"Date: {rac_date.strftime('%Y-%m-%d')}, Time: {rac_time}"
+            rac_notes = st.text_area("Raw Meeting Notes:", height=200, key="rac_raw_notes")
             
-            if st.button("✨ Draft RAC Minutes", type="primary"):
-                if raw_notes:
-                    with st.spinner("Structuring minutes..."):
-                        result = generate_admin_document("RAC", raw_notes, context=str(meeting_date))
-                        if result:
-                            st.markdown(result)
-                else:
-                    st.warning("Please paste some rough notes first.")
+            if st.button("✨ Generate Official RAC Minutes", type="primary", key="btn_rac"):
+                if rac_notes:
+                    with st.spinner("Synthesizing meeting minutes..."):
+                        generated_minutes = generate_admin_document("RAC", rac_notes, rac_context)
+                        if generated_minutes: st.session_state['draft_rac'] = generated_minutes
+                else: st.warning("Please provide meeting notes.")
                     
-        elif doc_mode == "ASHP Corrective Action Report":
-            standard_cited = st.text_input("Cited ASHP Standard (e.g., Standard 3.1.c)")
-            raw_notes = st.text_area("Rough Notes on Program Corrective Actions", height=150)
-            
-            if st.button("✨ Draft ASHP Report", type="primary"):
-                if raw_notes and standard_cited:
-                    with st.spinner("Formatting to accreditation standards..."):
-                        result = generate_admin_document("ASHP", raw_notes, context=standard_cited)
-                        if result:
-                            st.markdown(result)
-                else:
-                    st.warning("Please provide both the cited standard and your rough notes.")
+            if 'draft_rac' in st.session_state:
+                st.write("---")
+                final_rac = st.text_area("Review and Edit (Markdown format):", value=st.session_state['draft_rac'], height=400)
+                st.download_button("📥 Download as Text File", data=final_rac, file_name=f"RAC_Minutes_{rac_date.strftime('%Y-%m-%d')}.txt", mime="text/plain")
 
+        with doc_tabs[1]:
+            st.subheader("ASHP Progress Report Generator")
+            
+            clean_standards = ["Standard 3.1.c (Fallback Mode - CSV Not Loaded)"]
+            if not ashp_standards_df.empty:
+                valid_standards = ashp_standards_df['ASHP Standards'].dropna().tolist()
+                clean_standards = [s for s in valid_standards if str(s).strip() != "" and ("Standard" in str(s) or str(s)[0].isdigit())]
+                
+            st.write("🏛️ **1. Select Cited Standard**")
+            selected_standard = st.selectbox("Select from ASHP framework:", options=clean_standards, key="ashp_std_dropdown")
+            
+            st.write("🛠️ **2. Corrective Action Narrative**")
+            ashp_notes = st.text_area("Briefly explain the fix:", height=100, key="ashp_raw_notes")
+            
+            st.write("🔗 **3. Inject Live Platform Evidence**")
+            col_ev1, col_ev2 = st.columns(2)
+            with col_ev1: attach_evals = st.checkbox("📊 Attach Live Evaluation Metrics")
+            with col_ev2: attach_tasks = st.checkbox("📋 Attach Clinical Task/Tracking Data")
+
+            if st.button("✨ Draft Data-Backed ASHP Response", type="primary", key="btn_ashp"):
+                if selected_standard and ashp_notes:
+                    with st.spinner("Compiling platform data..."):
+                        platform_evidence = "\n--- LIVE PROGRAM DATA ---\n"
+                        
+                        if attach_evals:
+                            live_eval_df = get_evaluation_log(active_sheet_name)
+                            if not live_eval_df.empty:
+                                total_evals = len(live_eval_df)
+                                res_count = live_eval_df[active_config['learner_column']].nunique() if active_config['learner_column'] in live_eval_df.columns else 0
+                                platform_evidence += f"- EVALUATIONS: Logged {total_evals} evaluations across {res_count} active residents.\n"
+                        
+                        if attach_tasks and not assignments_df.empty:
+                            platform_evidence += f"- TASKS: Managing {len(assignments_df)} active clinical assignments.\n"
+                        
+                        combined_notes = f"NARRATIVE CONTEXT:\n{ashp_notes}\n{platform_evidence}"
+                        generated_response = generate_admin_document("ASHP", combined_notes, context=selected_standard)
+                        
+                        if generated_response: st.session_state['draft_ashp'] = generated_response
+                else: st.warning("Please provide a brief narrative.")
+                    
+            if 'draft_ashp' in st.session_state:
+                st.write("---")
+                final_ashp = st.text_area("Review and Edit:", value=st.session_state['draft_ashp'], height=400)
+                st.download_button("📥 Download Response", data=final_ashp, file_name="ASHP_Response_Draft.txt", mime="text/plain")
+                
 elif user_role == "preceptor":
     st.title("👨‍🏫 Preceptor Dashboard")
     tab1, tab2, tab3, tab4 = st.tabs(["👨‍🏫 Evaluate Resident", "📈 Resident Status", "📚 Curriculum Library", "🎓 Academic Records"])
