@@ -1050,6 +1050,23 @@ if user_role == "admin":
                 
 elif user_role == "preceptor":
     st.title("👨‍🏫 Preceptor Dashboard")
+    
+    # --- RESTORED: Today's Schedule Overview ---
+    today_date_str = datetime.today().strftime('%Y-%m-%d')
+    st.subheader(f"📅 Today: {today_date_str}")
+    today_all_sched = get_todays_schedule()
+    
+    if not today_all_sched.empty:
+        name_col = active_config.get("learner_column", "Resident Name")
+        display_cols = [name_col, 'Subject']
+        if 'Start Time' in today_all_sched.columns: display_cols.append('Start Time')
+        if 'End Time' in today_all_sched.columns: display_cols.append('End Time')
+        st.dataframe(today_all_sched[display_cols], hide_index=True, use_container_width=True)
+    else:
+        st.info("No residents scheduled for clinical rotations today.")
+    st.divider()
+    # -------------------------------------------
+
     tab1, tab2, tab3, tab4 = st.tabs(["👨‍🏫 Evaluate Resident", "📈 Resident Status", "📚 Curriculum Library", "🎓 Academic Records"])
    
     with tab1:
@@ -1060,6 +1077,23 @@ elif user_role == "preceptor":
         if learner_dict:
             stat_res_id = st.selectbox("Check Status for:", list(learner_dict.keys()), format_func=lambda x: learner_dict.get(x, x), key="prec_stat_res")
             render_step_tracker(stat_res_id)
+            
+            # --- RESTORED: Recent Evaluations Table ---
+            st.write("---")
+            st.subheader("📈 Recent Evaluations (Last 10)")
+            live_eval_df = get_evaluation_log(active_sheet_name)
+            if not live_eval_df.empty:
+                res_evals = get_learner_evals(live_eval_df, active_config, stat_res_id)
+                if not res_evals.empty:
+                    res_evals['Timestamp'] = pd.to_datetime(res_evals['Timestamp'], errors='coerce')
+                    recent_10 = res_evals.sort_values(by='Timestamp', ascending=False).head(10)
+                    recent_10['Timestamp'] = recent_10['Timestamp'].dt.strftime('%Y-%m-%d %H:%M')
+                    display_cols = ['Timestamp', 'Preceptor Name', 'Rotation', 'ASHP Objective', 'Grade']
+                    valid_cols = [col for col in display_cols if col in recent_10.columns]
+                    st.dataframe(recent_10[valid_cols], use_container_width=True, hide_index=True)
+                else:
+                    st.info("No recent evaluations found for this resident.")
+            # -------------------------------------------
             
     with tab3:
         render_curriculum(user_role, user_tier)
@@ -1082,12 +1116,63 @@ elif user_role == "learner":
         render_daily_operations(logged_in_id, user_role)
         render_assignments(logged_in_id)
         
+        # --- RESTORED: Recommended Study Context ---
+        st.divider()
+        st.subheader("📖 Today's Recommended Study")
+        today_sched = get_todays_schedule(logged_in_id)
+        if not today_sched.empty and not curriculum_df.empty:
+            current_rotation = today_sched.iloc[0]['Subject']
+            # Heuristic to match rotation to curriculum module
+            matched_modules = curriculum_df[curriculum_df['Category / Module'].str.contains(str(current_rotation).split()[-1], case=False, na=False)]
+            if not matched_modules.empty:
+                rec_topic = matched_modules.iloc[0]
+                st.info(f"Based on your **{current_rotation}** rotation, we recommend reviewing:")
+                st.markdown(f"**Module:** {rec_topic['Category / Module']}  \n**Topic:** {rec_topic['Topic']}")
+                if pd.notna(rec_topic.get('Resource URL (Published)')):
+                    st.link_button("Open Study Material", str(rec_topic['Resource URL (Published)']))
+            else:
+                st.info("Head over to the Curriculum Library to select a study module for today.")
+        else:
+            st.info("No active clinical rotations today. Browse the Curriculum Library for independent study.")
+        # ------------------------------------------
+            
     with tab2:
         render_curriculum(user_role, user_tier)
         
     with tab3:
         st.subheader("📅 Upcoming Shifts")
+        
+        # --- RESTORED: Upcoming Shifts Table ---
+        if not schedule_df.empty:
+            id_col = active_config.get("learner_id_column", "Learner_ID")
+            if id_col not in schedule_df.columns:
+                id_col = active_config.get("learner_column", "Resident Name")
+                
+            my_sched_all = schedule_df[schedule_df[id_col] == logged_in_id].copy()
+            date_col = 'Start Date' if 'Start Date' in schedule_df.columns else 'Date'
+            
+            if not my_sched_all.empty and date_col in my_sched_all.columns:
+                my_sched_all[date_col] = pd.to_datetime(my_sched_all[date_col], errors='coerce')
+                today_date = pd.to_datetime(datetime.today().strftime("%Y-%m-%d"))
+                
+                future_sched = my_sched_all[my_sched_all[date_col] >= today_date].sort_values(by=date_col).head(5)
+                
+                if not future_sched.empty:
+                    future_sched[date_col] = future_sched[date_col].dt.strftime('%Y-%m-%d')
+                    display_cols = ['Subject', date_col]
+                    if 'Start Time' in future_sched.columns: display_cols.append('Start Time')
+                    st.table(future_sched[display_cols])
+                else:
+                    st.info("No upcoming shifts scheduled. Enjoy the downtime!")
+            else:
+                st.warning("Schedule dates could not be parsed.")
+        else:
+            st.warning("Schedule data unavailable.")
+        # ---------------------------------------
+        
+        st.divider()
         render_step_counter(learner_id=logged_in_id, weekly_goal=5)
+        st.divider()
         
         st.subheader("📈 My 10 Most Recent Evaluations")
         live_eval_df = get_evaluation_log(active_sheet_name) 
@@ -1096,7 +1181,11 @@ elif user_role == "learner":
             if not my_evals.empty:
                 my_evals['Timestamp'] = pd.to_datetime(my_evals['Timestamp'], errors='coerce')
                 recent_10 = my_evals.sort_values(by='Timestamp', ascending=False).head(10)
+                recent_10['Timestamp'] = recent_10['Timestamp'].dt.strftime('%Y-%m-%d %H:%M')
+                st.metric("Total Lifetime Evaluations Logged", len(my_evals))
                 st.dataframe(recent_10, use_container_width=True, hide_index=True)
+            else:
+                st.info("No evaluations on record.")
 
     with tab4:
         render_resident_profile(logged_in_id, is_preceptor_view=False)
