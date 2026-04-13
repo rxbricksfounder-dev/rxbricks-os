@@ -1,16 +1,14 @@
 import zlib
 import json
-import requests
-import datetime
-import streamlit as st
-import pandas as pd
-import streamlit_authenticator as stauth
 import bcrypt
-import streamlit.components.v1 as components
+import pandas as pd
+import streamlit as st
 import gspread
-from google.oauth2.service_account import Credentials
-from datetime import datetime
+import streamlit_authenticator as stauth
+import streamlit.components.v1 as components
 import google.generativeai as genai
+from datetime import datetime
+from google.oauth2.service_account import Credentials
 
 # ==========================================\
 # 0. MULTI-TENANT PROGRAM CONFIGURATION
@@ -23,7 +21,7 @@ PROGRAM_CONFIG = {
         "evaluation_column": "ASHP Objective",
         "learner_column": "Resident Name",
         "standards_column": "ASHP Standards",
-        "learner_id_column": "Learner_ID"       # <--- ADDED FOR SQL MIGRATION
+        "learner_id_column": "Learner_ID"       
     },
     "APPE_CLINICAL": {
         "program_name": "University of Arizona APPE",
@@ -32,22 +30,57 @@ PROGRAM_CONFIG = {
         "evaluation_column": "AACP EPA Evaluated",
         "learner_column": "Student Name",
         "standards_column": "EPA Description",
-        "learner_id_column": "Learner_ID"       # <--- ADDED FOR SQL MIGRATION
+        "learner_id_column": "Learner_ID"       
     }
 }
 
+# 1. SETTINGS & CONFIG
+st.set_page_config(page_title="RxBricks: Trust Verification", layout="wide", page_icon="🧱")
+
+# --- ENVIRONMENT SELECTION ---
+st.sidebar.subheader("🌐 Active Environment")
+selected_env_key = st.sidebar.selectbox(
+    "Select Program Module:",
+    options=list(PROGRAM_CONFIG.keys()),
+    format_func=lambda x: PROGRAM_CONFIG[x]["program_name"]
+)
+active_config = PROGRAM_CONFIG[selected_env_key]
+active_sheet_name = active_config["sheet_name"]
+st.sidebar.divider()
+
 # ==========================================\
-# 1. THE BACKEND WRITE-BACK FUNCTION
+# API CONNECTION MANAGERS (DRY APPROACH)
 # ==========================================\
-def log_evaluation_to_sheet(preceptor, resident, rotation, objective, criteria, grade, comment, action_plan, narrative, ai_quality_grade="", pharmacademic_text=""):
+@st.cache_resource
+def get_gspread_client():
+    """Initializes Google Sheets client once and caches it."""
     try:
         scopes = [
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
         creds = Credentials.from_service_account_info(json.loads(st.secrets["raw_google_json"]), scopes=scopes)
-        client = gspread.authorize(creds)
-      
+        return gspread.authorize(creds)
+    except Exception as e:
+        st.error(f"Failed to authenticate with Google: {e}")
+        return None
+
+def get_gemini_model():
+    """Initializes Gemini model centrally."""
+    if "GEMINI_API_KEY" not in st.secrets:
+        st.error("🚨 Missing GEMINI_API_KEY in Streamlit secrets.")
+        return None
+    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+    return genai.GenerativeModel('gemini-2.5-flash')
+
+# ==========================================\
+# 1. THE BACKEND DATA FUNCTIONS
+# ==========================================\
+def log_evaluation_to_sheet(preceptor, resident, rotation, objective, criteria, grade, comment, action_plan, narrative, ai_quality_grade="", pharmacademic_text=""):
+    client = get_gspread_client()
+    if not client: return False
+    
+    try:
         sheet = client.open(active_sheet_name).worksheet("3_Evaluation_Log")
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
@@ -56,19 +89,74 @@ def log_evaluation_to_sheet(preceptor, resident, rotation, objective, criteria, 
             criteria, grade, comment, action_plan, narrative,
             ai_quality_grade, pharmacademic_text
         ]
-        
         sheet.append_row(row_data)
+        get_evaluation_log.clear() # Clear cache so new data shows immediately
         return True
     except Exception as e:
         st.error(f"Error writing to Google Sheets: {e}")
         return False
 
+@st.cache_data(ttl=60)
+def get_evaluation_log(sheet_name):
+    client = get_gspread_client()
+    if not client: return pd.DataFrame()
+    
+    try:
+        sheet = client.open(sheet_name).worksheet("3_Evaluation_Log")
+        df = pd.DataFrame(sheet.get_all_records())
+        
+        if not df.empty:
+            df.replace("", pd.NA, inplace=True)
+            df.dropna(how='all', inplace=True)
+            if 'Timestamp' in df.columns:
+                df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+        return df
+    except Exception as e:
+        st.error(f"Failed to load evaluation log: {e}")
+        return pd.DataFrame()
+
+@st.cache_data(ttl=60)
+def load_all_data(sheet_name, standards_tab_name):
+    client = get_gspread_client()
+    if not client: 
+        return tuple(pd.DataFrame() for _ in range(7))
+        
+    try:
+        spreadsheet = client.open(sheet_name)
+        
+        curr = pd.DataFrame(spreadsheet.worksheet("1_Curriculum").get_all_records())
+        resp = pd.DataFrame(spreadsheet.worksheet("Form Responses 1").get_all_records()) 
+        sched = pd.DataFrame(spreadsheet.worksheet("4_Schedule").get_all_records())
+        user_db = pd.DataFrame(spreadsheet.worksheet("3_Users").get_all_records())
+        assign_df = pd.DataFrame(spreadsheet.worksheet("5_Assignments").get_all_records())
+        rotation_tasks_df = pd.DataFrame(spreadsheet.worksheet("7_Rotation_Task_Mapping").get_all_records())
+        ashp_df = pd.DataFrame(spreadsheet.worksheet(standards_tab_name).get_all_records())
+        
+        for df in [curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df]:
+            df.replace("", pd.NA, inplace=True)
+            df.dropna(how='all', inplace=True)
+            
+        if not sched.empty:
+            if 'Start Date' in sched.columns:
+                sched['Start Date'] = pd.to_datetime(sched['Start Date'], errors='coerce')
+            if 'End Date' in sched.columns:
+                sched['End Date'] = pd.to_datetime(sched['End Date'], errors='coerce')
+        
+        return curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df
+        
+    except Exception as e:
+        st.error(f"⚠️ Database Connection Error. Details: {e}")
+        return tuple(pd.DataFrame() for _ in range(7))
+
+# Load data globally for the session
+curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df, ashp_standards_df = load_all_data(active_sheet_name, active_config["standards_tab"])
+
 # ==========================================\
-# 2. THE AI EVALUATION SCRIBE & QUALITY GATE
+# 2. AI ENGINES
 # ==========================================\
 def generate_ai_evaluation(raw_dictation, resident_name, rotation, topic, zone):
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    model = genai.GenerativeModel('gemini-2.5-flash')
+    model = get_gemini_model()
+    if not model: return None
     
     prompt = f"""
     You are an expert Pharmacy Residency Program Director.
@@ -94,27 +182,17 @@ def generate_ai_evaluation(raw_dictation, resident_name, rotation, topic, zone):
     """
     
     try:
-        response = model.generate_content(
-            prompt,
-            generation_config=genai.GenerationConfig(response_mime_type="application/json")
-        )
+        response = model.generate_content(prompt, generation_config=genai.GenerationConfig(response_mime_type="application/json"))
         return json.loads(response.text)
     except Exception as e:
         st.error(f"AI Formatting Error: {str(e)}")
         return None
 
-# ==========================================
-# 2B. THE AI SCRIBE ENGINE (ADMIN & ASHP)
-# ==========================================
 def generate_admin_document(doc_type, raw_notes, context=""):
+    model = get_gemini_model()
+    if not model: return None
+    
     try:
-        if "GEMINI_API_KEY" not in st.secrets:
-            st.error("🚨 Missing GEMINI_API_KEY in Streamlit secrets.")
-            return None
-            
-        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        
         if doc_type == "RAC":
             prompt = (
                 "You are an expert clinical pharmacy Residency Program Director.\n"
@@ -158,12 +236,9 @@ def generate_admin_document(doc_type, raw_notes, context=""):
         st.error(f"AI Generation Failed: {e}")
         return None
 
-# ==========================================\
-# 3. AI GAP ANALYSIS ENGINE (RPD AUDIT)
-# ==========================================\
 def run_gap_analysis(standard_name, evaluation_data_subset):
-    genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-    model = genai.GenerativeModel('gemini-2.5-flash')
+    model = get_gemini_model()
+    if not model: return None
     
     combined_narratives = "\n---\n".join(evaluation_data_subset['Overall Narrative'].dropna().astype(str).tolist())
     
@@ -182,123 +257,31 @@ def run_gap_analysis(standard_name, evaluation_data_subset):
     Raw Evaluation Data:
     {combined_narratives}
     """
-    
     try:
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
         return f"Error running AI Audit: {str(e)}"
 
-# ==========================================
-# 3. THE BACKEND READ FUNCTION 
-# ==========================================
-@st.cache_data(ttl=60)
-def get_evaluation_log(sheet_name):
-    try:
-        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_info(json.loads(st.secrets["raw_google_json"]), scopes=scopes)
-        client = gspread.authorize(creds)
-        sheet = client.open(sheet_name).worksheet("3_Evaluation_Log")
-        data = sheet.get_all_records()
-        
-        df = pd.DataFrame(data)
-        
-        if not df.empty:
-            df.replace("", pd.NA, inplace=True)
-            df.dropna(how='all', inplace=True)
-            if 'Timestamp' in df.columns:
-                df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
-        
-        return df
-    except Exception as e:
-        st.error(f"Failed to load evaluation log: {e}")
-        return pd.DataFrame()
-
 # =========================================================
-# UI TRANSLATION DICTIONARY (ASHP to Clinical Role)
+# 4. AUTHENTICATION & ROUTING FIX
 # =========================================================
-ASHP_TO_CLINICAL_ROLE = {
-    "R1.1.6": {"role_name": "Bedside Emergency Response", "ui_header": "### 🚨 Acute Medical Response & Direct Care", "description": "Ensure implementation of therapeutic regimens."},
-    "R5.1.1": {"role_name": "Medical Emergency Management & Leadership", "ui_header": "### 🚨 Acute Medical Response & Direct Care", "description": "Demonstrate the essential role of the EM pharmacist in emergencies."},
-    "R1.1.1": {"role_name": "Multidisciplinary Interaction & Drug Info", "ui_header": "### 🗣️ Multidisciplinary Interaction & Drug Info", "description": "Interact effectively with health care teams."},
-    "R1.1.2": {"role_name": "Multidisciplinary Interaction & Drug Info", "ui_header": "### 🗣️ Multidisciplinary Interaction & Drug Info", "description": "Interact effectively with patients, family, and caregivers."},
-    "R1.1.7": {"role_name": "Multidisciplinary Interaction & Drug Info", "ui_header": "### 🗣️ Multidisciplinary Interaction & Drug Info", "description": "Communicate and document direct patient care activities."},
-    "R1.1.3": {"role_name": "Patient Work-ups & Preceptor Discussion", "ui_header": "### 🧠 Patient Work-ups & Preceptor Discussion", "description": "Collect and analyze information to base safe therapy."},
-    "R1.1.4": {"role_name": "Patient Work-ups & Preceptor Discussion", "ui_header": "### 🧠 Patient Work-ups & Preceptor Discussion", "description": "Analyze and assess information for safe medication therapy."},
-    "R1.1.5": {"role_name": "Patient Work-ups & Preceptor Discussion", "ui_header": "### 🧠 Patient Work-ups & Preceptor Discussion", "description": "Design safe and effective patient-centered therapeutic regimens."},
-    "R1.1.8": {"role_name": "Patient Work-ups & Preceptor Discussion", "ui_header": "### 🧠 Patient Work-ups & Preceptor Discussion", "description": "Demonstrate responsibility for patient outcomes."},
-    "R1.2.1": {"role_name": "Patient Work-ups & Preceptor Discussion", "ui_header": "### 🔄 Transitions of Care", "description": "Manage transitions of care effectively."},
-    "R1.3.1": {"role_name": "Medication Preparation & Delivery", "ui_header": "### 💊 Medication Preparation & Delivery", "description": "Facilitate delivery of medications following best practices."},
-    "R1.3.2": {"role_name": "Medication Preparation & Delivery", "ui_header": "### 💊 Medication Preparation & Delivery", "description": "Manage aspects of the medication-use process related to formulary."},
-    "R1.3.3": {"role_name": "Medication Preparation & Delivery", "ui_header": "### 💊 Medication Preparation & Delivery", "description": "Facilitate aspects of the medication-use process."},
-    "R2.1.1": {"role_name": "Systems Educator & Innovator", "ui_header": "### 📋 Departmental Responsibilities & Projects", "description": "Prepare or revise a drug class review, monograph, or guideline."},
-    "R2.1.2": {"role_name": "Systems Educator & Innovator", "ui_header": "### 📋 Departmental Responsibilities & Projects", "description": "Identify opportunities for improvement of the medication-use system."},
-    "R2.2.1": {"role_name": "Systems Educator & Innovator", "ui_header": "### 📋 Departmental Responsibilities & Projects", "description": "Identify and demonstrate understanding of specific project topic."},
-    "ROTATION_EXPECTATION": {"role_name": "Departmental Responsibilities", "ui_header": "### 📋 General Rotation Expectations", "description": "General rotation expectations, meetings, and standard duties."}
-}
-
-# 1. SETTINGS & CONFIG
-st.set_page_config(page_title="RxBricks: EM Trust Verification", layout="wide", page_icon="🧱")
-
-# --- ENVIRONMENT SELECTION ---
-st.sidebar.subheader("🌐 Active Environment")
-selected_env_key = st.sidebar.selectbox(
-    "Select Program Module:",
-    options=list(PROGRAM_CONFIG.keys()),
-    format_func=lambda x: PROGRAM_CONFIG[x]["program_name"]
-)
-active_config = PROGRAM_CONFIG[selected_env_key]
-active_sheet_name = active_config["sheet_name"]
-st.sidebar.divider()
-
-# ==========================================\
-# CORE DATA INGESTION 
-# ==========================================\
-@st.cache_data(ttl=60)
-def load_all_data(sheet_name, standards_tab_name):
-    try:
-        scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_info(json.loads(st.secrets["raw_google_json"]), scopes=scopes)
-        client = gspread.authorize(creds)
-        spreadsheet = client.open(sheet_name)
-        
-        curr = pd.DataFrame(spreadsheet.worksheet("1_Curriculum").get_all_records())
-        resp = pd.DataFrame(spreadsheet.worksheet("Form Responses 1").get_all_records()) 
-        sched = pd.DataFrame(spreadsheet.worksheet("4_Schedule").get_all_records())
-        user_db = pd.DataFrame(spreadsheet.worksheet("3_Users").get_all_records())
-        assign_df = pd.DataFrame(spreadsheet.worksheet("5_Assignments").get_all_records())
-        rotation_tasks_df = pd.DataFrame(spreadsheet.worksheet("7_Rotation_Task_Mapping").get_all_records())
-        ashp_df = pd.DataFrame(spreadsheet.worksheet(standards_tab_name).get_all_records())
-        
-        for df in [curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df]:
-            df.replace("", pd.NA, inplace=True)
-            df.dropna(how='all', inplace=True)
-            
-        if not sched.empty:
-            if 'Start Date' in sched.columns:
-                sched['Start Date'] = pd.to_datetime(sched['Start Date'], errors='coerce')
-            if 'End Date' in sched.columns:
-                sched['End Date'] = pd.to_datetime(sched['End Date'], errors='coerce')
-        
-        return curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df
-        
-    except Exception as e:
-        st.error(f"⚠️ Database Connection Error. Details: {e}")
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-
-curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df, ashp_standards_df = load_all_data(active_sheet_name, active_config["standards_tab"])
-
-# 4. AUTHENTICATION SETUP
 credentials = {"usernames": {}}
 if not users_df.empty:
     for _, row in users_df.iterrows():
         uname = str(row['Username']).strip()
         raw_pw = str(row['Password']).strip()
         hpw = bcrypt.hashpw(raw_pw.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        role = str(row['Role']).strip().upper()
-        if role == "RPD": r_internal = "admin"
-        elif role == "RESIDENT": r_internal = "learner"
-        else: r_internal = "preceptor"
+        
+        # FIXED: More robust role mapping
+        db_role = str(row['Role']).strip().upper()
+        if db_role in ["RPD", "ADMIN", "DIRECTOR"]: 
+            r_internal = "admin"
+        elif db_role in ["RESIDENT", "LEARNER", "STUDENT"]: 
+            r_internal = "learner"
+        else: 
+            r_internal = "preceptor"
+            
         u_tier = str(row['Tier']).strip().capitalize() if 'Tier' in users_df.columns else "Basic"
         
         credentials["usernames"][uname] = {
@@ -329,29 +312,24 @@ user_tier = credentials["usernames"][username]["tier"]
 authenticator.logout(location="sidebar")
 st.sidebar.success(f"Logged in: {name} | Tier: {user_tier}")
 
-if role in ["RPD", "Preceptor"]:
+# FIXED: Removed the leaked variable check 'role' here.
+if user_role in ["admin", "preceptor"]:
     st.divider()
 
 # =========================================================
-# NEW: SQL ID REPOSITORY PATTERN 
+# ID REPOSITORY PATTERN 
 # =========================================================
-
 def get_learner_mapping(users_dataframe, config):
-    """Creates a dictionary mapping { 'L-101': 'Gabby Alvarez' } with a safety fallback."""
     if users_dataframe.empty: return {}
-    learners = users_dataframe[users_dataframe['Role'].str.upper() == 'RESIDENT']
-    
+    # Broadened search to match robust role logic
+    learners = users_dataframe[users_dataframe['Role'].str.upper().isin(["RESIDENT", "LEARNER", "STUDENT"])]
     id_col = config.get("learner_id_column", "Learner_ID")
-    # Safety Net: If the Google Sheet hasn't been updated with Learner_ID yet, fallback to names
     if id_col not in users_dataframe.columns:
         id_col = "Name"
-        
     return dict(zip(learners[id_col], learners['Name']))
 
-# Initialize the global dictionary so all UI dropdowns can access it
 learner_dict = get_learner_mapping(users_df, active_config)
 
-# Determine the Logged-In User's ID
 logged_in_id = name 
 for lid, lname in learner_dict.items():
     if lname == name:
@@ -359,15 +337,13 @@ for lid, lname in learner_dict.items():
         break
 
 def get_learner_evals(df, config, learner_id):
-    """Fetch all evaluations using the unique Learner ID, falling back to name if needed."""
     if df.empty: return pd.DataFrame()
     id_col = config.get("learner_id_column", "Learner_ID")
     if id_col not in df.columns:
-        id_col = config.get("learner_column", "Resident Name") # Fallback
+        id_col = config.get("learner_column", "Resident Name") 
     return df[df[id_col] == learner_id].copy()
 
 def get_recent_evals(df, config, learner_id, days=7):
-    """Fetch evaluations for a learner within the last X days."""
     my_evals = get_learner_evals(df, config, learner_id)
     if my_evals.empty: return pd.DataFrame()
     my_evals['Timestamp'] = pd.to_datetime(my_evals['Timestamp'], errors='coerce')
@@ -377,7 +353,6 @@ def get_recent_evals(df, config, learner_id, days=7):
 # =========================================================
 # REUSABLE COMPONENTS 
 # =========================================================
-
 def render_step_counter(learner_id, weekly_goal=5):
     st.subheader("🏃‍♂️ Clinical Step Counter")
     df = get_evaluation_log(active_sheet_name)
@@ -393,7 +368,6 @@ def render_step_counter(learner_id, weekly_goal=5):
         return
     
     recent_evals = get_recent_evals(df, active_config, learner_id, days=7)
-    
     current_steps = len(recent_evals)
     progress_fraction = min(current_steps / weekly_goal, 1.0)
     
@@ -410,13 +384,15 @@ def render_step_counter(learner_id, weekly_goal=5):
         st.caption(f"You need {weekly_goal - current_steps} more logged actions to hit your weekly target.")
 
 def render_step_tracker(learner_id):
-    if eval_df.empty or curriculum_df.empty:
+    # Standardizing use of get_evaluation_log
+    live_df = get_evaluation_log(active_sheet_name)
+    if live_df.empty or curriculum_df.empty:
         st.caption("👟 **Step Tracker:** Awaiting evaluation data...")
         st.progress(0.0)
         return
         
     total_topics = len(curriculum_df['Topic'].unique())
-    res_evals = get_learner_evals(eval_df, active_config, learner_id)
+    res_evals = get_learner_evals(live_df, active_config, learner_id)
     
     if 'Activity' in res_evals.columns:
         completed_topics = res_evals['Activity'].nunique()
@@ -431,11 +407,12 @@ def render_step_tracker(learner_id):
     st.progress(progress_pct)
 
 def get_milestone_badges(learner_id):
-    if curriculum_df.empty or eval_df.empty:
+    live_df = get_evaluation_log(active_sheet_name)
+    if curriculum_df.empty or live_df.empty:
         return {}
 
     module_reqs = curriculum_df.groupby('Category / Module')['Topic'].nunique().to_dict()
-    res_evals = get_learner_evals(eval_df, active_config, learner_id)
+    res_evals = get_learner_evals(live_df, active_config, learner_id)
     
     topic_col = 'Activity' if 'Activity' in res_evals.columns else ('Topic' if 'Topic' in res_evals.columns else None)
     completed_topics = res_evals[topic_col].unique().tolist() if topic_col else []
@@ -454,7 +431,6 @@ def get_milestone_badges(learner_id):
     return badges
 
 def render_resident_profile(learner_id, is_preceptor_view=False):
-    # Convert ID to Name for display
     display_name = learner_dict.get(learner_id, learner_id)
     st.header(f"🎓 Professional Profile: {display_name}")
     
@@ -500,10 +476,11 @@ def render_resident_profile(learner_id, is_preceptor_view=False):
                     st.progress(progress)
 
     st.divider()
+    live_df = get_evaluation_log(active_sheet_name)
+    res_evals = get_learner_evals(live_df, active_config, learner_id)
 
     if is_preceptor_view:
         st.subheader("📋 Academic & Professional Record")
-        res_evals = get_learner_evals(eval_df, active_config, learner_id)
         if not res_evals.empty:
             st.dataframe(res_evals, use_container_width=True)
         else:
@@ -518,7 +495,6 @@ def render_resident_profile(learner_id, is_preceptor_view=False):
             cv_text += "- *Modules currently in progress.*\n"
             
         cv_text += "\n### Advanced Clinical Actions\n"
-        res_evals = get_learner_evals(eval_df, active_config, learner_id)
         
         action_col = 'Activity' if 'Activity' in res_evals.columns else ('Topic' if 'Topic' in res_evals.columns else None)
         if action_col and not res_evals.empty:
@@ -534,14 +510,14 @@ def render_resident_profile(learner_id, is_preceptor_view=False):
         st.text_area("Your CV Export:", value=cv_text, height=250)
 
 # =========================================================
-# CURRICULUM
+# UI BLOCKS
 # =========================================================
 def render_curriculum(current_role, current_tier):
     if curriculum_df.empty:
         st.warning("Curriculum data is currently unavailable.")
         return
 
-    st.subheader("📚 Vision 2026 Curriculum Library")
+    st.subheader("📚 Vision Curriculum Library")
     all_cats = curriculum_df['Category / Module'].dropna().unique()
     
     col_nav1, col_nav2 = st.columns(2)
@@ -622,15 +598,11 @@ def render_curriculum(current_role, current_tier):
             else:
                 st.link_button(f"Open {res_type} in New Tab", res_url)
 
-# =========================================================
-# EVALUATION TOOL
-# =========================================================
 def render_evaluation_tool():
     if not learner_dict:
         st.warning("No residents found in the system.")
         return
 
-    # UPDATED: Use ID dropdown
     target_res_id = st.selectbox(
         "Select Resident to Evaluate", 
         options=list(learner_dict.keys()), 
@@ -659,7 +631,6 @@ def render_evaluation_tool():
             st.warning("Please dictate a few words first!")
         else:
             with st.spinner("AI Coach is analyzing and drafting..."):
-                # Pass the NAME to the AI, not the ID!
                 ai_result = generate_ai_evaluation(raw_dictation_1, learner_dict.get(target_res_id, target_res_id), selected_rotation, selected_action, zone_action)
                 if ai_result:
                     st.session_state.eval_draft = ai_result
@@ -692,7 +663,7 @@ def render_evaluation_tool():
             with st.spinner("Writing securely to Google Sheets..."):
                 success = log_evaluation_to_sheet(
                     preceptor=current_preceptor, 
-                    resident=target_res_id,  # <--- SAVING THE ID!
+                    resident=target_res_id,  
                     rotation=selected_rotation,
                     objective=selected_action,
                     criteria="Clinical Scenario",
@@ -707,9 +678,6 @@ def render_evaluation_tool():
                     st.success("🎉 Safely logged to Database! Ready for PharmAcademic export.")
                     st.session_state.eval_draft = None
 
-# =========================================================
-# DAILY ACTIVITIES & CLINICAL POLICIES MODULE
-# =========================================================
 def get_todays_schedule(target_id=None):
     if schedule_df.empty: return pd.DataFrame()
     today_str = datetime.today().strftime("%Y-%m-%d")
@@ -768,7 +736,6 @@ def render_daily_operations(learner_id, current_role):
                     st.link_button(f"🔗 Review Policy", str(policy_link), type="primary")
                     
                 if st.button(f"Mark Complete", key=f"complete_btn_{learner_id}_{rotation_subject}_{idx}"):
-                    # Function requires updating to take ID in Google Sheet
                     pass
             st.divider()
 
@@ -807,30 +774,43 @@ def render_assignments(learner_id):
             st.link_button("1️⃣ Open Assignment Form", form_link, type="primary")
             st.checkbox("2️⃣ Mark as Submitted", key=f"submit_{learner_id}_{assign_title}_{idx}")
 
+# FIXED: Completed this previously hanging function
 def render_assignment_tracker():
     st.subheader("📋 Global Assignment Tracker")
-    if assignments_df.empty: return
+    if assignments_df.empty: 
+        st.warning("No assignments loaded.")
+        return
     
-    # Use IDs
     res_options = ["All Residents"] + list(learner_dict.keys())
     selected_res_id = st.selectbox(
         "Filter by Resident:", 
         res_options, 
         format_func=lambda x: "All Residents" if x == "All Residents" else learner_dict.get(x, x)
     )
+    
+    # Simple logic to render the dataframe based on selection
+    if selected_res_id == "All Residents":
+        st.dataframe(assignments_df, use_container_width=True)
+    else:
+        # Check if we have an assignment column, if not just show all
+        if 'Assigned To' in assignments_df.columns:
+            learner_name = learner_dict.get(selected_res_id)
+            filtered_df = assignments_df[assignments_df['Assigned To'].str.contains(learner_name, case=False, na=True)]
+            st.dataframe(filtered_df, use_container_width=True)
+        else:
+            st.dataframe(assignments_df, use_container_width=True)
+
 
 def render_rpd_command_center(weekly_goal=5):
     st.subheader("🌐 RPD Command Center: Program Overview")
     live_eval_df = get_evaluation_log(active_sheet_name)
     
     if live_eval_df.empty: return
-    live_eval_df['Timestamp'] = pd.to_datetime(live_eval_df['Timestamp'], errors='coerce')
     seven_days_ago = datetime.now() - pd.Timedelta(days=7)
     
     if not learner_dict: return
         
     macro_data = []
-    # UPDATED: Loop through dictionary of IDs
     for res_id, res_name in learner_dict.items():
         res_df = get_learner_evals(live_eval_df, active_config, res_id)
         total_evals = len(res_df)
@@ -854,7 +834,7 @@ def render_rpd_command_center(weekly_goal=5):
     st.dataframe(macro_df, hide_index=True)
 
 # =========================================================
-# DASHBOARDS
+# ROUTING & DASHBOARDS
 # =========================================================
 
 if user_role == "admin":        
@@ -865,9 +845,9 @@ if user_role == "admin":
         render_rpd_command_center(weekly_goal=5)
         st.write("---")    
         st.subheader("📊 ASHP Accreditation Step Tracker")
-        eval_df = get_evaluation_log(active_sheet_name) 
+        live_eval_df = get_evaluation_log(active_sheet_name) 
     
-        if not eval_df.empty:
+        if not live_eval_df.empty:
             view_mode = st.radio("Select View", ["Program Overview", "By Resident"], horizontal=True)
             if view_mode == "By Resident":
                 selected_res_id = st.selectbox(
@@ -875,13 +855,12 @@ if user_role == "admin":
                     options=list(learner_dict.keys()), 
                     format_func=lambda x: learner_dict.get(x, x)
                 )
-                working_df = get_learner_evals(eval_df, active_config, selected_res_id)
+                working_df = get_learner_evals(live_eval_df, active_config, selected_res_id)
             else:
-                working_df = eval_df
+                working_df = live_eval_df
     
         st.divider()
         st.subheader("Granular Resident Assignment Tracking")
-        live_eval_df = get_evaluation_log(active_sheet_name)
         if learner_dict:
             sel_res_id = st.selectbox("Review Resident Progress:", list(learner_dict.keys()), format_func=lambda x: learner_dict.get(x, x), key="admin_report_res")
             render_step_tracker(sel_res_id)
