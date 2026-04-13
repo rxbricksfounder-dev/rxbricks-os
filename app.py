@@ -21,7 +21,24 @@ PROGRAM_CONFIG = {
         "evaluation_column": "ASHP Objective",
         "learner_column": "Resident Name",
         "standards_column": "ASHP Standards",
-        "learner_id_column": "Learner_ID"       
+        "learner_id_column": "Learner_ID",
+        # NEW: Terminology mapping
+        "nomenclature": {
+            "learner": "Resident",
+            "educator": "Preceptor",
+            "director": "Residency Program Director",
+            "committee": "Residency Advisory Committee (RAC)",
+            "committee_short": "RAC",
+            "eval_system": "PharmAcademic",
+            "accreditation": "ASHP"
+        },
+        # NEW: Program-specific settings
+        "eval_settings": {
+            "grading_scale": ["ACHR", "ACH", "SP", "NI"],
+            "entrustment_scale": ["1 - Knows", "2 - Knows How", "3 - Shows How", "4 - Does"],
+            "rotations": ["CORE - 1 - EM", "CORE - 2 - EM", "CORE - 3 - ICU", "ELEC - Tox"] 
+            # Note: Rotations ideally should be loaded dynamically from schedule_df if possible
+        }
     },
     "APPE_CLINICAL": {
         "program_name": "University of Arizona APPE",
@@ -30,10 +47,23 @@ PROGRAM_CONFIG = {
         "evaluation_column": "AACP EPA Evaluated",
         "learner_column": "Student Name",
         "standards_column": "EPA Description",
-        "learner_id_column": "Learner_ID"       
+        "learner_id_column": "Learner_ID",
+        "nomenclature": {
+            "learner": "Student",
+            "educator": "Preceptor",
+            "director": "Course Coordinator",
+            "committee": "Curriculum Committee",
+            "committee_short": "CC",
+            "eval_system": "CoreELMS", # Or whichever system they use
+            "accreditation": "ACPE"
+        },
+        "eval_settings": {
+            "grading_scale": ["Exceeds Expectations", "Meets Expectations", "Needs Improvement", "Fail"],
+            "entrustment_scale": ["1 - Observe", "2 - Assist", "3 - Perform with Guidance", "4 - Perform Independently"],
+            "rotations": ["Ambulatory Care", "Acute Care", "Community", "Hospital"]
+        }
     }
 }
-
 # 1. SETTINGS & CONFIG
 st.set_page_config(page_title="RxBricks: Trust Verification", layout="wide", page_icon="🧱")
 
@@ -154,33 +184,36 @@ curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df
 # ==========================================\
 # 2. AI ENGINES
 # ==========================================\
-def generate_ai_evaluation(raw_dictation, resident_name, rotation, topic, zone):
+def generate_ai_evaluation(raw_dictation, learner_name, rotation, topic, zone, config):
     model = get_gemini_model()
     if not model: return None
     
+    nom = config["nomenclature"]
+    eval_sys = nom["eval_system"]
+    
     prompt = f"""
-    You are an expert Pharmacy Residency Program Director.
-    First, evaluate the quality of the raw preceptor dictation. Then, format it into a highly professional clinical evaluation.
+    You are an expert {nom['director']}.
+    First, evaluate the quality of the raw {nom['educator'].lower()} dictation. Then, format it into a highly professional clinical evaluation.
     
     Context:
-    * Resident: {resident_name}
+    * {nom['learner']}: {learner_name}
     * Rotation: {rotation}
     * Topic/Action: {topic}
     * Target Zone: {zone}
     
-    Raw Preceptor Dictation:
+    Raw {nom['educator']} Dictation:
     {raw_dictation}
     
     Output Requirements:
     Return ONLY a strict JSON object with exactly these 6 keys:
     1. "QualityGrade": String ("Green", "Yellow", or "Red"). Red means the dictation was lazy or lacked clinical context.
-    2. "QualityFeedback": String (1 short sentence of direct coaching to the preceptor explaining *why* their dictation scored that grade).
-    3. "Grade": Must be one of: "ACHR", "ACH", "SP", or "NI".
+    2. "QualityFeedback": String (1 short sentence of direct coaching to the {nom['educator'].lower()} explaining *why* their dictation scored that grade).
+    3. "Grade": Must be one of: {', '.join(config['eval_settings']['grading_scale'])}.
     4. "Comment": A 1-2 sentence professional assessment.
     5. "ActionPlan": 1-2 sentences detailing specific next steps.
-    6. "Narrative": A comprehensive synthesis paragraph ready for PharmAcademic.
+    6. "Narrative": A comprehensive synthesis paragraph ready for {eval_sys}.
     """
-    
+        
     try:
         response = model.generate_content(prompt, generation_config=genai.GenerationConfig(response_mime_type="application/json"))
         return json.loads(response.text)
