@@ -870,8 +870,36 @@ if user_role == "admin":
     with tab2:
         render_evaluation_tool()
        
-    with tab3: 
-        st.subheader("Today's Active Residents")
+    with tab3:
+        st.subheader("📅 Today's Active Residents")
+        today_all_sched = get_todays_schedule() # Fetches everyone on the schedule today
+        
+        if today_all_sched.empty:
+            st.info("No residents are formally scheduled for rotations today.")
+        else:
+            name_col = active_config.get("learner_column", "Resident Name")
+            display_cols = [name_col, 'Subject']
+            if 'Start Time' in today_all_sched.columns: display_cols.append('Start Time')
+            if 'End Time' in today_all_sched.columns: display_cols.append('End Time')
+            
+            # Display high-level schedule
+            st.dataframe(today_all_sched[display_cols], hide_index=True, use_container_width=True)
+            
+            st.divider()
+            st.subheader("📋 Expected Daily Operations by Resident")
+            
+            # Loop through today's residents and show their expected actions
+            for idx, row in today_all_sched.iterrows():
+                res_name = row.get(name_col, 'Unknown Learner')
+                rotation_subject = row.get('Subject', 'Unknown Rotation')
+                
+                with st.expander(f"🩺 {res_name} | {rotation_subject}"):
+                    daily_tasks = rotation_tasks_df[rotation_tasks_df['Rotation_ID'] == rotation_subject]
+                    if not daily_tasks.empty:
+                        st.markdown("**Mapped Clinical Actions & Policies:**")
+                        st.dataframe(daily_tasks[['Actionable_Activity', 'Clinical_Policy']], hide_index=True, use_container_width=True)
+                    else:
+                        st.caption("No specific mapped actions found for this rotation.")
         
     with tab4: 
         render_assignment_tracker()
@@ -884,6 +912,36 @@ if user_role == "admin":
             
     with tab6:
         st.header("📝 AI Document Engine")
+        st.info("Transform rough notes into formal program documentation using the Gemini AI Engine.")
+        
+        doc_mode = st.radio("Select Output Format:", ["RAC Meeting Minutes", "ASHP Corrective Action Report"], horizontal=True)
+        st.divider()
+        
+        if doc_mode == "RAC Meeting Minutes":
+            meeting_date = st.date_input("Meeting Date")
+            raw_notes = st.text_area("Rough Meeting Notes (Attendees, Topics, Decisions, Action Items)", height=150)
+            
+            if st.button("✨ Draft RAC Minutes", type="primary"):
+                if raw_notes:
+                    with st.spinner("Structuring minutes..."):
+                        result = generate_admin_document("RAC", raw_notes, context=str(meeting_date))
+                        if result:
+                            st.markdown(result)
+                else:
+                    st.warning("Please paste some rough notes first.")
+                    
+        elif doc_mode == "ASHP Corrective Action Report":
+            standard_cited = st.text_input("Cited ASHP Standard (e.g., Standard 3.1.c)")
+            raw_notes = st.text_area("Rough Notes on Program Corrective Actions", height=150)
+            
+            if st.button("✨ Draft ASHP Report", type="primary"):
+                if raw_notes and standard_cited:
+                    with st.spinner("Formatting to accreditation standards..."):
+                        result = generate_admin_document("ASHP", raw_notes, context=standard_cited)
+                        if result:
+                            st.markdown(result)
+                else:
+                    st.warning("Please provide both the cited standard and your rough notes.")
 
 elif user_role == "preceptor":
     st.title("👨‍🏫 Preceptor Dashboard")
