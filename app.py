@@ -62,6 +62,28 @@ PROGRAM_CONFIG = {
             "entrustment_scale": ["1 - Observe", "2 - Assist", "3 - Perform with Guidance", "4 - Perform Independently"],
             "rotations": ["Ambulatory Care", "Acute Care", "Community", "Hospital"]
         }
+    },
+    "HYMR_PREP": {
+        "program_name": "High-Yield Med Reviews - Board Prep",
+        "sheet_name": "04_MASTER_SHEET_HYMR", # You will need to duplicate a Google Sheet for this
+        "standards_tab": "HYMR_Standards",
+        "evaluation_column": "Topic Objective",
+        "learner_column": "Candidate Name",
+        "standards_column": "HYMR Standards",
+        "learner_id_column": "Learner_ID",
+        "nomenclature": {
+            "learner": "Candidate",
+            "educator": "Coach",
+            "director": "Program Administrator",
+            "committee": "SME Review Board",
+            "committee_short": "SME",
+            "eval_system": "Adaptive Phenotype Engine",
+            "accreditation": "HYMR"
+        },
+        "eval_settings": {
+            "grading_scale": ["Mastered", "Progressing", "Needs Review", "Critical Gap"],
+            "entrustment_scale": ["Independent", "Guided", "Direct Supervision"]
+        }
     }
 }
 # 1. SETTINGS & CONFIG
@@ -314,18 +336,23 @@ if not users_df.empty:
         db_role = str(row['Role']).strip().upper()
         if db_role in ["RPD", "ADMIN", "DIRECTOR"]: 
             r_internal = "admin"
-        elif db_role in ["RESIDENT", "LEARNER", "STUDENT"]: 
+        elif db_role in ["RESIDENT", "LEARNER", "STUDENT", "CANDIDATE"]: # Added CANDIDATE
             r_internal = "learner"
         else: 
             r_internal = "preceptor"
             
         u_tier = str(row['Tier']).strip().capitalize() if 'Tier' in users_df.columns else "Basic"
         
+        # NEW: Safely handle the Phenotype column
+        phenotype_val = "Standard"
+        if 'Phenotype' in users_df.columns and pd.notna(row['Phenotype']):
+            phenotype_val = str(row['Phenotype']).strip()
+        
         credentials["usernames"][uname] = {
             "email": str(row['Email']), "name": str(row['Name']),
-            "password": hpw, "role": r_internal, "tier": u_tier
+            "password": hpw, "role": r_internal, "tier": u_tier,
+            "phenotype": phenotype_val # Added to dictionary
         }
-
 authenticator = stauth.Authenticate(credentials, "rxbricks_em", "auth_key", cookie_expiry_days=30)
 authenticator.login(location="main")
 
@@ -346,10 +373,11 @@ if username not in credentials["usernames"]:
 
 user_role = credentials["usernames"][username]["role"]
 user_tier = credentials["usernames"][username]["tier"]
+user_phenotype = credentials["usernames"][username].get("phenotype", "Standard")
+st.session_state['phenotype'] = user_phenotype
 authenticator.logout(location="sidebar")
 st.sidebar.success(f"Logged in: {name} | Tier: {user_tier}")
 
-# FIXED: Removed the leaked variable check 'role' here.
 if user_role in ["admin", "preceptor"]:
     st.divider()
 
@@ -1171,7 +1199,9 @@ elif user_role == "preceptor":
 
 elif user_role == "learner":
     st.title(f"Welcome, {learner_dict.get(logged_in_id, logged_in_id)}!")
-
+    
+    st.markdown(f"**Cognitive Phenotype:** `{st.session_state.get('phenotype', 'Standard')}`")
+    
     render_step_tracker(logged_in_id)
     st.write("---")
     
