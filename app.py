@@ -175,26 +175,39 @@ def load_all_data(sheet_name, standards_tab_name):
         
     try:
         spreadsheet = client.open(sheet_name)
-        
-        curr = pd.DataFrame(spreadsheet.worksheet("1_Curriculum").get_all_records())
-        resp = pd.DataFrame(spreadsheet.worksheet("Form Responses 1").get_all_records()) 
-        sched = pd.DataFrame(spreadsheet.worksheet("4_Schedule").get_all_records())
-        user_db = pd.DataFrame(spreadsheet.worksheet("3_Users").get_all_records())
-        assign_df = pd.DataFrame(spreadsheet.worksheet("5_Assignments").get_all_records())
-        rotation_tasks_df = pd.DataFrame(spreadsheet.worksheet("7_Rotation_Task_Mapping").get_all_records())
-        ashp_df = pd.DataFrame(spreadsheet.worksheet(standards_tab_name).get_all_records())
-        
-        for df in [curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df]:
+    except Exception as e:
+        st.error(f"⚠️ Failed to open spreadsheet '{sheet_name}'. Ensure it is shared with the service account. Details: {e}")
+        return tuple(pd.DataFrame() for _ in range(7))
+
+    def fetch_sheet(ws_name):
+        try:
+            return pd.DataFrame(spreadsheet.worksheet(ws_name).get_all_records())
+        except Exception as e:
+            st.warning(f"🚨 Data Parsing Error in tab '{ws_name}': {e}. (Check for blank headers or duplicate column names!)")
+            return pd.DataFrame()
+
+    curr = fetch_sheet("1_Curriculum")
+    resp = fetch_sheet("Form Responses 1") 
+    sched = fetch_sheet("4_Schedule")
+    user_db = fetch_sheet("3_Users")
+    assign_df = fetch_sheet("5_Assignments")
+    rotation_tasks_df = fetch_sheet("7_Rotation_Task_Mapping")
+    ashp_df = fetch_sheet(standards_tab_name)
+    
+    dataframes = [curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df]
+    
+    for df in dataframes:
+        if not df.empty:
             df.replace("", pd.NA, inplace=True)
             df.dropna(how='all', inplace=True)
             
-        if not sched.empty:
-            if 'Start Date' in sched.columns:
-                sched['Start Date'] = pd.to_datetime(sched['Start Date'], errors='coerce')
-            if 'End Date' in sched.columns:
-                sched['End Date'] = pd.to_datetime(sched['End Date'], errors='coerce')
-        
-        return curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df
+    if not sched.empty:
+        if 'Start Date' in sched.columns:
+            sched['Start Date'] = pd.to_datetime(sched['Start Date'], errors='coerce')
+        if 'End Date' in sched.columns:
+            sched['End Date'] = pd.to_datetime(sched['End Date'], errors='coerce')
+    
+    return curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df
         
     except Exception as e:
         st.error(f"⚠️ Database Connection Error. Details: {e}")
