@@ -65,7 +65,7 @@ PROGRAM_CONFIG = {
     },
     "HYMR_PREP": {
         "program_name": "High-Yield Med Reviews - Board Prep",
-        "sheet_name": "https://docs.google.com/spreadsheets/d/1aag5kr_cxun18AyCs_E0-dzRtkGWmgrRYDEbveKG-yw/edit?usp=sharing"
+        "sheet_name": "https://docs.google.com/spreadsheets/d/1aag5kr_cxun18AyCs_E0-dzRtkGWmgrRYDEbveKG-yw/edit?usp=sharing",
         "standards_tab": "HYMR_Standards",
         "evaluation_column": "Topic Objective",
         "learner_column": "Candidate Name",
