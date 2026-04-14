@@ -175,45 +175,30 @@ def load_all_data(sheet_name, standards_tab_name):
         
     try:
         spreadsheet = client.open(sheet_name)
-    except Exception as e:
-        st.error(f"⚠️ Failed to open spreadsheet '{sheet_name}'. Ensure it is shared with the service account. Details: {e}")
-        return tuple(pd.DataFrame() for _ in range(7))
-
-    def fetch_sheet(ws_name):
-        try:
-            return pd.DataFrame(spreadsheet.worksheet(ws_name).get_all_records())
-        except Exception as e:
-            st.warning(f"🚨 Data Parsing Error in tab '{ws_name}': {e}. (Check for blank headers or duplicate column names!)")
-            return pd.DataFrame()
-
-    curr = fetch_sheet("1_Curriculum")
-    resp = fetch_sheet("Form Responses 1") 
-    sched = fetch_sheet("4_Schedule")
-    user_db = fetch_sheet("3_Users")
-    assign_df = fetch_sheet("5_Assignments")
-    rotation_tasks_df = fetch_sheet("7_Rotation_Task_Mapping")
-    ashp_df = fetch_sheet(standards_tab_name)
-    
-    dataframes = [curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df]
-    
-    for df in dataframes:
-        if not df.empty:
+        
+        curr = pd.DataFrame(spreadsheet.worksheet("1_Curriculum").get_all_records())
+        resp = pd.DataFrame(spreadsheet.worksheet("Form Responses 1").get_all_records()) 
+        sched = pd.DataFrame(spreadsheet.worksheet("4_Schedule").get_all_records())
+        user_db = pd.DataFrame(spreadsheet.worksheet("3_Users").get_all_records())
+        assign_df = pd.DataFrame(spreadsheet.worksheet("5_Assignments").get_all_records())
+        rotation_tasks_df = pd.DataFrame(spreadsheet.worksheet("7_Rotation_Task_Mapping").get_all_records())
+        ashp_df = pd.DataFrame(spreadsheet.worksheet(standards_tab_name).get_all_records())
+        
+        for df in [curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df]:
             df.replace("", pd.NA, inplace=True)
             df.dropna(how='all', inplace=True)
             
-    if not sched.empty:
-        if 'Start Date' in sched.columns:
-            sched['Start Date'] = pd.to_datetime(sched['Start Date'], errors='coerce')
-        if 'End Date' in sched.columns:
-            sched['End Date'] = pd.to_datetime(sched['End Date'], errors='coerce')
-    
-    return curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df
-    
-    sched['Start Date'] = pd.to_datetime(sched['Start Date'], errors='coerce')
-    if 'End Date' in sched.columns:
-        sched['End Date'] = pd.to_datetime(sched['End Date'], errors='coerce')
-    
-    return curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df
+        if not sched.empty:
+            if 'Start Date' in sched.columns:
+                sched['Start Date'] = pd.to_datetime(sched['Start Date'], errors='coerce')
+            if 'End Date' in sched.columns:
+                sched['End Date'] = pd.to_datetime(sched['End Date'], errors='coerce')
+        
+        return curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df
+        
+    except Exception as e:
+        st.error(f"⚠️ Database Connection Error. Details: {e}")
+        return tuple(pd.DataFrame() for _ in range(7))
 
 # Load data globally for the session
 curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df, ashp_standards_df = load_all_data(active_sheet_name, active_config["standards_tab"])
@@ -303,25 +288,43 @@ def recalculate_cascade(schedule_df, learner_column, learner_id, exam_date_str, 
 # ==========================================\
 # 2. AI ENGINES
 # ==========================================\
-def generate_ai_evaluation(prompt):
-    """Calls Gemini API to format the preceptor's rough dictation."""
-    if not GEMINI_API_KEY:
-        st.error("🚨 Gemini API Key is missing. Add it to Streamlit Secrets.")
-        return None
-        
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-2.5-flash')
+def generate_ai_evaluation(raw_dictation, learner_name, rotation, topic, zone, config):
+    model = get_gemini_model()
+    if not model: return None
     
+    nom = config["nomenclature"]
+    eval_sys = nom["eval_system"]
+    
+    prompt = f"""
+    You are an expert {nom['director']}.
+    First, evaluate the quality of the raw {nom['educator'].lower()} dictation. Then, format it into a highly professional clinical evaluation.
+    
+    Context:
+    * {nom['learner']}: {learner_name}
+    * Rotation: {rotation}
+    * Topic/Action: {topic}
+    * Target Zone: {zone}
+    
+    Raw {nom['educator']} Dictation:
+    {raw_dictation}
+    
+    Output Requirements:
+    Return ONLY a strict JSON object with exactly these 6 keys:
+    1. "QualityGrade": String ("Green", "Yellow", or "Red"). Red means the dictation was lazy or lacked clinical context.
+    2. "QualityFeedback": String (1 short sentence of direct coaching to the {nom['educator'].lower()} explaining *why* their dictation scored that grade).
+    3. "Grade": Must be one of: {', '.join(config['eval_settings']['grading_scale'])}.
+    4. "Comment": A 1-2 sentence professional assessment.
+    5. "ActionPlan": 1-2 sentences detailing specific next steps.
+    6. "Narrative": A comprehensive synthesis paragraph ready for {eval_sys}.
+    """
+        
     try:
-        response = model.generate_content(
-            prompt, 
-            generation_config=genai.GenerationConfig(response_mime_type="application/json")
-        )
+        response = model.generate_content(prompt, generation_config=genai.GenerationConfig(response_mime_type="application/json"))
         return json.loads(response.text)
     except Exception as e:
         st.error(f"AI Formatting Error: {str(e)}")
         return None
-        
+
 def generate_admin_document(doc_type, raw_notes, config, context=""):
     model = get_gemini_model()
     if not model: return None
