@@ -844,9 +844,8 @@ def render_assignment_tracker():
             st.dataframe(assignments_df, use_container_width=True)
 
 
-def render_rpd_command_center(weekly_goal=5):
-    st.subheader("🌐 RPD Command Center: Program Overview")
-    live_eval_df = get_evaluation_log(active_sheet_name)
+def render_rpd_command_center(active_config, weekly_goal=5):
+    nom = active_config["nomenclature"]
     
     if live_eval_df.empty: return
     seven_days_ago = datetime.now() - pd.Timedelta(days=7)
@@ -887,7 +886,7 @@ if user_role == "admin":
     
     with tab1:
         st.subheader(f"🌐 {nom['director'].split(' ')[0]} Command Center: Program Overview")
-        render_rpd_command_center(weekly_goal=5)
+        render_rpd_command_center(active_config, weekly_goal=5)
         st.write("---")    
         
         st.subheader(f"📊 {nom['accreditation']} Accreditation Step Tracker")
