@@ -65,7 +65,7 @@ PROGRAM_CONFIG = {
     },
     "HYMR_PREP": {
         "program_name": "High-Yield Med Reviews - Board Prep",
-        "sheet_name": "04_MASTER_SHEET_HYMR", # You will need to duplicate a Google Sheet for this
+        "sheet_name": "https://docs.google.com/spreadsheets/d/1aag5kr_cxun18AyCs_E0-dzRtkGWmgrRYDEbveKG-yw/edit?usp=sharing"
         "standards_tab": "HYMR_Standards",
         "evaluation_column": "Topic Objective",
         "learner_column": "Candidate Name",
@@ -172,13 +172,15 @@ def load_all_data(sheet_name, standards_tab_name):
     client = get_gspread_client()
     if not client: 
         return tuple(pd.DataFrame() for _ in range(7))
-        
     try:
-        spreadsheet = client.open(sheet_name)
+        if "http" in sheet_name:
+            spreadsheet = client.open_by_url(sheet_name)
+        else:
+            spreadsheet = client.open(sheet_name)
     except Exception as e:
-        st.error(f"⚠️ Failed to open spreadsheet '{sheet_name}'. Ensure it is shared with the service account. Details: {e}")
+        st.error(f"⚠️ Failed to open spreadsheet. Ensure it is shared with the service account. Details: {e}")
         return tuple(pd.DataFrame() for _ in range(7))
-
+        
     def fetch_sheet(ws_name):
         try:
             return pd.DataFrame(spreadsheet.worksheet(ws_name).get_all_records())
@@ -219,12 +221,15 @@ def save_schedule_to_sheet(sheet_name, updated_df):
     """Writes the recalculated schedule back to the 4_Schedule tab."""
     try:
         client = get_gspread_client()
-        sheet = client.open(sheet_name)
+        if "http" in sheet_name:
+            sheet = client.open_by_url(sheet_name)
+        else:
+            sheet = client.open(sheet_name)
+            
         worksheet = sheet.worksheet("4_Schedule")
-        # Clear the existing schedule and overwrite with the new one
         worksheet.clear()
         worksheet.update([updated_df.columns.values.tolist()] + updated_df.values.tolist())
-        st.cache_data.clear() # Clear cache so the app reloads fresh data
+        st.cache_data.clear() 
         return True
     except Exception as e:
         st.error(f"Failed to update schedule: {e}")
