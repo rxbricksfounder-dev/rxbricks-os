@@ -206,7 +206,7 @@ curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df
 def save_schedule_to_sheet(sheet_name, updated_df):
     """Writes the recalculated schedule back to the 4_Schedule tab."""
     try:
-        client = get_google_sheet()
+        client = get_gspread_client()
         sheet = client.open(sheet_name)
         worksheet = sheet.worksheet("4_Schedule")
         # Clear the existing schedule and overwrite with the new one
@@ -1293,11 +1293,10 @@ elif user_role == "learner":
         render_daily_operations(logged_in_id, user_role)
         render_assignments(logged_in_id)
         
-        # --- RESTORED: Recommended Study Context ---
         st.divider()
         st.subheader("📅 My Dynamic Study Schedule")
-        if '4_Schedule' in raw_data:
-            sched_df = raw_data['4_Schedule']
+        if not schedule_df.empty: 
+            sched_df = schedule_df 
             learner_col = active_config.get('learner_column', 'Resident Name')
             
             if learner_col in sched_df.columns and 'Start Date' in sched_df.columns:
@@ -1326,10 +1325,8 @@ elif user_role == "learner":
                                 sched_df.loc[today_mask, 'Status'] = 'Missed'
                                 
                                 # 2. Run the cascade algorithm
-                                # Note: Fetching Exam_Date from users sheet
-                                users_df = raw_data.get('3_Users', pd.DataFrame())
                                 exam_date = ""
-                                if not users_df.empty and 'Exam_Date' in users_df.columns:
+                                if not users_df.empty and 'Exam_Date' in users_df.columns: 
                                     user_row = users_df[users_df['Username'] == st.session_state["username"]]
                                     if not user_row.empty:
                                         exam_date = user_row.iloc[0]['Exam_Date']
