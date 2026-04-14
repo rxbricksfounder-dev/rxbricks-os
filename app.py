@@ -301,36 +301,15 @@ def recalculate_cascade(schedule_df, learner_column, learner_id, exam_date_str, 
 # ==========================================\
 # 2. AI ENGINES
 # ==========================================\
-def generate_ai_evaluation(raw_dictation, learner_name, rotation, topic, zone, config):
-    model = get_gemini_model()
-    if not model: return None
-    
-    nom = config["nomenclature"]
-    eval_sys = nom["eval_system"]
-    
-    prompt = f"""
-    You are an expert {nom['director']}.
-    First, evaluate the quality of the raw {nom['educator'].lower()} dictation. Then, format it into a highly professional clinical evaluation.
-    
-    Context:
-    * {nom['learner']}: {learner_name}
-    * Rotation: {rotation}
-    * Topic/Action: {topic}
-    * Target Zone: {zone}
-    
-    Raw {nom['educator']} Dictation:
-    {raw_dictation}
-    
-    Output Requirements:
-    Return ONLY a strict JSON object with exactly these 6 keys:
-    1. "QualityGrade": String ("Green", "Yellow", or "Red"). Red means the dictation was lazy or lacked clinical context.
-    2. "QualityFeedback": String (1 short sentence of direct coaching to the {nom['educator'].lower()} explaining *why* their dictation scored that grade).
-    3. "Grade": Must be one of: {', '.join(config['eval_settings']['grading_scale'])}.
-    4. "Comment": A 1-2 sentence professional assessment.
-    5. "ActionPlan": 1-2 sentences detailing specific next steps.
-    6. "Narrative": A comprehensive synthesis paragraph ready for {eval_sys}.
-    """
+def generate_ai_evaluation(prompt):
+    """Calls Gemini API to format the preceptor's rough dictation."""
+    if not GEMINI_API_KEY:
+        st.error("🚨 Gemini API Key is missing. Add it to Streamlit Secrets.")
+        return None
         
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel('gemini-2.5-flash')
+    
     try:
         response = model.generate_content(
             prompt, 
