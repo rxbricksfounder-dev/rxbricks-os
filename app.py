@@ -208,7 +208,7 @@ def load_all_data(sheet_name, standards_tab_name):
             sched['End Date'] = pd.to_datetime(sched['End Date'], errors='coerce')
     
     return curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df
-        
+    
     except Exception as e:
         st.error(f"⚠️ Database Connection Error. Details: {e}")
         return tuple(pd.DataFrame() for _ in range(7))
@@ -332,12 +332,15 @@ def generate_ai_evaluation(raw_dictation, learner_name, rotation, topic, zone, c
     """
         
     try:
-        response = model.generate_content(prompt, generation_config=genai.GenerationConfig(response_mime_type="application/json"))
+        response = model.generate_content(
+            prompt, 
+            generation_config=genai.GenerationConfig(response_mime_type="application/json")
+        )
         return json.loads(response.text)
     except Exception as e:
         st.error(f"AI Formatting Error: {str(e)}")
         return None
-
+        
 def generate_admin_document(doc_type, raw_notes, config, context=""):
     model = get_gemini_model()
     if not model: return None
