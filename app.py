@@ -203,6 +203,88 @@ def load_all_data(sheet_name, standards_tab_name):
 # Load data globally for the session
 curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df, ashp_standards_df = load_all_data(active_sheet_name, active_config["standards_tab"])
 
+def save_schedule_to_sheet(sheet_name, updated_df):
+    """Writes the recalculated schedule back to the 4_Schedule tab."""
+    try:
+        client = get_google_sheet()
+        sheet = client.open(sheet_name)
+        worksheet = sheet.worksheet("4_Schedule")
+        # Clear the existing schedule and overwrite with the new one
+        worksheet.clear()
+        worksheet.update([updated_df.columns.values.tolist()] + updated_df.values.tolist())
+        st.cache_data.clear() # Clear cache so the app reloads fresh data
+        return True
+    except Exception as e:
+        st.error(f"Failed to update schedule: {e}")
+        return False
+
+from datetime import timedelta
+
+def recalculate_cascade(schedule_df, learner_column, learner_id, exam_date_str, max_hours=8.0):
+    """The Kaplan-style dynamic schedule recalculator."""
+    if pd.isna(exam_date_str) or not exam_date_str:
+        return schedule_df, "No Exam Date set. Cannot recalculate."
+        
+    try:
+        exam_date = pd.to_datetime(exam_date_str)
+        today = pd.to_datetime(datetime.now().date())
+    except Exception:
+        return schedule_df, "Invalid Exam Date format. Use YYYY-MM-DD."
+
+    if exam_date <= today:
+        return schedule_df, "Exam date is in the past or today. Good luck!"
+
+    # 1. Identify tasks for THIS learner that need rescheduling (Missed or Pending)
+    learner_mask = schedule_df[learner_column] == learner_id
+    incomplete_mask = schedule_df['Status'].isin(['Missed', 'Pending', '']) | schedule_df['Status'].isna()
+    target_mask = learner_mask & incomplete_mask
+    
+    tasks_to_schedule = schedule_df[target_mask].copy()
+    if tasks_to_schedule.empty:
+        return schedule_df, "No pending or missed tasks to recalculate."
+
+    # 2. Sort by Priority Tier (High Yield first, then Med, then Low)
+    priority_map = {'High Yield': 3, 'Med Yield': 2, 'Low Yield': 1}
+    tasks_to_schedule['Priority_Score'] = tasks_to_schedule['Priority_Tier'].map(priority_map).fillna(2)
+    
+    # Ensure Estimated_Hours is numeric
+    tasks_to_schedule['Estimated_Hours'] = pd.to_numeric(tasks_to_schedule['Estimated_Hours'], errors='coerce').fillna(2.0)
+    tasks_to_schedule = tasks_to_schedule.sort_values(by=['Priority_Score', 'Estimated_Hours'], ascending=[False, True])
+
+    # 3. Calculate remaining available days
+    available_days = pd.date_range(start=today + timedelta(days=1), end=exam_date - timedelta(days=1))
+    if len(available_days) == 0:
+        return schedule_df, "CRITICAL: No study days left before the exam!"
+
+    # 4. Bin-packing: Distribute tasks into remaining days without exceeding max_hours
+    day_loads = {day: 0.0 for day in available_days}
+    
+    for idx, row in tasks_to_schedule.iterrows():
+        hours = row['Estimated_Hours']
+        assigned_day = None
+        
+        # Find the first available day that can fit this topic
+        for day in available_days:
+            if day_loads[day] + hours <= max_hours:
+                assigned_day = day
+                break
+        
+        # If it doesn't fit anywhere safely, apply compression/triage rules
+        if assigned_day is None:
+            if row['Priority_Tier'] == 'Low Yield':
+                schedule_df.loc[idx, 'Status'] = 'Skipped (Triage)' # Drop low yield
+            else:
+                # Force High/Med yield into the day with the least load (even if it goes over max_hours)
+                min_day = min(day_loads, key=day_loads.get)
+                schedule_df.loc[idx, 'Start Date'] = min_day.strftime('%Y-%m-%d')
+                schedule_df.loc[idx, 'Status'] = 'Pending'
+                day_loads[min_day] += hours
+        else:
+            schedule_df.loc[idx, 'Start Date'] = assigned_day.strftime('%Y-%m-%d')
+            schedule_df.loc[idx, 'Status'] = 'Pending'
+            day_loads[assigned_day] += hours
+
+    return schedule_df, "Schedule successfully recalibrated."
 # ==========================================\
 # 2. AI ENGINES
 # ==========================================\
@@ -1213,22 +1295,57 @@ elif user_role == "learner":
         
         # --- RESTORED: Recommended Study Context ---
         st.divider()
-        st.subheader("📖 Today's Recommended Study")
-        today_sched = get_todays_schedule(logged_in_id)
-        if not today_sched.empty and not curriculum_df.empty:
-            current_rotation = today_sched.iloc[0]['Subject']
-            # Heuristic to match rotation to curriculum module
-            matched_modules = curriculum_df[curriculum_df['Category / Module'].str.contains(str(current_rotation).split()[-1], case=False, na=False)]
-            if not matched_modules.empty:
-                rec_topic = matched_modules.iloc[0]
-                st.info(f"Based on your **{current_rotation}** rotation, we recommend reviewing:")
-                st.markdown(f"**Module:** {rec_topic['Category / Module']}  \n**Topic:** {rec_topic['Topic']}")
-                if pd.notna(rec_topic.get('Resource URL (Published)')):
-                    st.link_button("Open Study Material", str(rec_topic['Resource URL (Published)']))
-            else:
-                st.info("Head over to the Curriculum Library to select a study module for today.")
-        else:
-            st.info("No active clinical rotations today. Browse the Curriculum Library for independent study.")
+        st.subheader("📅 My Dynamic Study Schedule")
+        if '4_Schedule' in raw_data:
+            sched_df = raw_data['4_Schedule']
+            learner_col = active_config.get('learner_column', 'Resident Name')
+            
+            if learner_col in sched_df.columns and 'Start Date' in sched_df.columns:
+                my_sched = sched_df[sched_df[learner_col] == logged_in_id].copy()
+                my_sched['Start Date'] = pd.to_datetime(my_sched['Start Date'], errors='coerce')
+                
+                # Filter for today and future
+                today_date = pd.to_datetime(datetime.now().date())
+                future_sched = my_sched[my_sched['Start Date'] >= today_date].sort_values(by='Start Date')
+                
+                if not future_sched.empty:
+                    display_cols = ['Subject', 'Start Date', 'Status', 'Priority_Tier', 'Estimated_Hours']
+                    display_cols = [c for c in display_cols if c in future_sched.columns]
+                    
+                    # --- NEW: Interactive Cascade Controls ---
+                    col1, col2 = st.columns([3, 1])
+                    with col1:
+                        st.dataframe(future_sched[display_cols], use_container_width=True, hide_index=True)
+                    
+                    with col2:
+                        st.info("💡 **Fell behind?**")
+                        if st.button("🚨 Mark Today Missed & Recalculate", use_container_width=True):
+                            with st.spinner("Cascading schedule..."):
+                                # 1. Mark today's pending tasks as Missed
+                                today_mask = (sched_df[learner_col] == logged_in_id) & (pd.to_datetime(sched_df['Start Date'], errors='coerce') == today_date)
+                                sched_df.loc[today_mask, 'Status'] = 'Missed'
+                                
+                                # 2. Run the cascade algorithm
+                                # Note: Fetching Exam_Date from users sheet
+                                users_df = raw_data.get('3_Users', pd.DataFrame())
+                                exam_date = ""
+                                if not users_df.empty and 'Exam_Date' in users_df.columns:
+                                    user_row = users_df[users_df['Username'] == st.session_state["username"]]
+                                    if not user_row.empty:
+                                        exam_date = user_row.iloc[0]['Exam_Date']
+
+                                new_sched, msg = recalculate_cascade(sched_df, learner_col, logged_in_id, exam_date)
+                                
+                                # 3. Save and refresh
+                                if "successfully" in msg:
+                                    save_schedule_to_sheet(active_sheet_name, new_sched)
+                                    st.success(msg)
+                                    st.rerun()
+                                else:
+                                    st.warning(msg)
+                    # ---------------------------------------
+                else:
+                    st.info("No upcoming tasks scheduled.")
         # ------------------------------------------
             
     with tab2:
