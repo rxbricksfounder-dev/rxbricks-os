@@ -209,9 +209,11 @@ def load_all_data(sheet_name, standards_tab_name):
     
     return curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df
     
-    except Exception as e:
-        st.error(f"⚠️ Database Connection Error. Details: {e}")
-        return tuple(pd.DataFrame() for _ in range(7))
+    sched['Start Date'] = pd.to_datetime(sched['Start Date'], errors='coerce')
+        if 'End Date' in sched.columns:
+            sched['End Date'] = pd.to_datetime(sched['End Date'], errors='coerce')
+    
+    return curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df
 
 # Load data globally for the session
 curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df, ashp_standards_df = load_all_data(active_sheet_name, active_config["standards_tab"])
