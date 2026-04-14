@@ -854,11 +854,21 @@ def render_rpd_command_center(active_config, live_eval_df, weekly_goal=5):
     if not learner_dict: return
         
     macro_data = []
+    
+    # 1. Calculate seven_days_ago
+    seven_days_ago = pd.to_datetime('today') - pd.Timedelta(days=7)
+
     for res_id, res_name in learner_dict.items():
-        res_df = get_learner_evals(live_eval_df, active_config, res_id)
+        res_df = get_learner_evals(live_eval_df, active_config, res_id).copy() # Use .copy() to avoid SettingWithCopyWarning
         total_evals = len(res_df)
-        recent_evals = len(res_df[res_df['Timestamp'] >= seven_days_ago])
         
+        # 2. Ensure Timestamp is datetime for comparison
+        if not res_df.empty and 'Timestamp' in res_df.columns:
+             res_df['Timestamp'] = pd.to_datetime(res_df['Timestamp'], errors='coerce')
+             recent_evals = len(res_df[res_df['Timestamp'] >= seven_days_ago])
+        else:
+             recent_evals = 0
+             
         status = "🌟 Excelling (Goal Met)" if recent_evals >= weekly_goal else "⚠️ Falling Behind" if recent_evals > 0 else "🚨 Critical (0 Logged)"
             
         macro_data.append({
