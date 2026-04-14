@@ -1141,11 +1141,18 @@ if user_role == "admin":
             if 'Start Time' in today_all_sched.columns: display_cols.append('Start Time')
             if 'End Time' in today_all_sched.columns: display_cols.append('End Time')
             
-            # Display high-level schedule
-            st.dataframe(today_all_sched[display_cols], hide_index=True, use_container_width=True)
-            
-            st.divider()
-            st.subheader("📋 Expected Daily Operations by Resident")
+            learner_col = active_config.get('learner_column', 'Resident Name')
+                
+                # --- NEW: Safely filter for columns that actually exist ---
+                desired_cols = [learner_col, 'Subject', 'Start Time', 'Status']
+                display_cols = [col for col in desired_cols if col in today_all_sched.columns]
+                
+                if display_cols:
+                    st.dataframe(today_all_sched[display_cols], hide_index=True, use_container_width=True)
+                else:
+                    # Fallback: Just show the whole dataframe if the desired columns are missing
+                    st.dataframe(today_all_sched, hide_index=True, use_container_width=True)
+                # ----------------------------------------------------------
             
             # Loop through today's residents and show their expected actions
             for idx, row in today_all_sched.iterrows():
