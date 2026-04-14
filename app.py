@@ -844,11 +844,12 @@ def render_assignment_tracker():
             st.dataframe(assignments_df, use_container_width=True)
 
 
-def render_rpd_command_center(active_config, weekly_goal=5):
+def render_rpd_command_center(active_config, live_eval_df, weekly_goal=5):
     nom = active_config["nomenclature"]
     
-    if live_eval_df.empty: return
-    seven_days_ago = datetime.now() - pd.Timedelta(days=7)
+    if live_eval_df is None or live_eval_df.empty: 
+        st.info("No evaluation data available yet.")
+        return
     
     if not learner_dict: return
         
@@ -886,14 +887,18 @@ if user_role == "admin":
     
     with tab1:
         st.subheader(f"🌐 {nom['director'].split(' ')[0]} Command Center: Program Overview")
-        render_rpd_command_center(active_config, weekly_goal=5)
+        
+        # 1. Fetch the data FIRST
+        live_eval_df = get_evaluation_log(active_sheet_name) 
+        
+        # 2. Pass the data INTO the function
+        render_rpd_command_center(active_config, live_eval_df, weekly_goal=5)
         st.write("---")    
         
         st.subheader(f"📊 {nom['accreditation']} Accreditation Step Tracker")
-        live_eval_df = get_evaluation_log(active_sheet_name) 
-    
+        
+        # 3. We already fetched live_eval_df above, so we can just use it immediately
         if not live_eval_df.empty:
-            # Note: For true multi-tenancy, move this dict to your PROGRAM_CONFIG under 'eval_settings'
             target_goals = {
                 "R1.1.1 (Therapeutic Regimens)": 10,
                 "R1.1.8 (Patient Outcomes)": 10,
