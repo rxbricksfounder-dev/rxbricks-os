@@ -1193,7 +1193,7 @@ if user_role == "admin":
                 half_point = len(items) // 2
                 render_progress(col1, items[:half_point], working_df, eval_col)
                 render_progress(col2, items[half_point:], working_df, eval_col)
-            else:
+            elif selected_env_key != "NAPLEX_PREP":
                 st.info("No target goals are configured in the PROGRAM_CONFIG for this environment.")
         else:
             st.info("No evaluation data found. Start logging evaluations to see progress here!")
