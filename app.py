@@ -172,7 +172,13 @@ def get_evaluation_log(sheet_name):
         else:
             sheet = client.open(sheet_name).worksheet("3_Evaluation_Log")
             
-        df = pd.DataFrame(sheet.get_all_records())
+        # ULTIMATE FIX: Bypass gspread's strict header validation
+        raw_data = sheet.get_all_values()
+        if raw_data and len(raw_data) > 0:
+            headers = raw_data.pop(0)
+            df = pd.DataFrame(raw_data, columns=headers)
+        else:
+            df = pd.DataFrame()
         
         if not df.empty:
             df.replace("", pd.NA, inplace=True)
@@ -200,7 +206,12 @@ def load_all_data(sheet_name, standards_tab_name):
         
     def fetch_sheet(ws_name):
         try:
-            return pd.DataFrame(spreadsheet.worksheet(ws_name).get_all_records())
+            # ULTIMATE FIX: Bypass gspread's strict header validation
+            raw_data = spreadsheet.worksheet(ws_name).get_all_values()
+            if raw_data and len(raw_data) > 0:
+                headers = raw_data.pop(0)
+                return pd.DataFrame(raw_data, columns=headers)
+            return pd.DataFrame()
         except Exception as e:
             st.warning(f"🚨 Data Parsing Error in tab '{ws_name}': {e}. (Check for blank headers or duplicate column names!)")
             return pd.DataFrame()
