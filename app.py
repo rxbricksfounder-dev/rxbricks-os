@@ -522,9 +522,29 @@ for lid, lname in learner_dict.items():
 
 def get_learner_evals(df, config, learner_id):
     if df.empty: return pd.DataFrame()
+    
+    # 1. Try primary ID column from config
     id_col = config.get("learner_id_column", "Learner_ID")
+    
+    # 2. Try the learner column from config
     if id_col not in df.columns:
         id_col = config.get("learner_column", "Resident Name") 
+        
+    # 3. THE SAFETY NET: Check for legacy/mismatched column names
+    if id_col not in df.columns:
+        possible_fallbacks = ["Candidate Name", "Resident", "Resident Name", "Student Name", "Student", "Name", "Learner"]
+        
+        column_found = False
+        for fallback in possible_fallbacks:
+            if fallback in df.columns:
+                id_col = fallback
+                column_found = True
+                break
+                
+        if not column_found:
+            st.warning(f"⚠️ Column mapping error: Could not find '{id_col}' in the Evaluation Log sheet.")
+            return pd.DataFrame() # Return empty safely instead of crashing
+            
     return df[df[id_col] == learner_id].copy()
 
 def get_recent_evals(df, config, learner_id, days=7):
