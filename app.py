@@ -1162,7 +1162,7 @@ if user_role == "admin":
                     st.caption(f"{current_count} / {TARGET_EVALS_PER_OBJECTIVE} Logged")
 
         # The layout manager (KEEP THIS)
-        if not items.empty:
+        if items:  # <-- Changed here to properly check a Python list
             half_point = len(items) // 2
             render_progress(col1, items[:half_point])
             render_progress(col2, items[half_point:])
