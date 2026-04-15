@@ -930,52 +930,49 @@ def get_todays_schedule(target_id=None):
         
     return today_sched
 
-def render_daily_operations(learner_id, current_role):
-    st.subheader("🎯 Today's Clinical Policies & Activities")
+def render_daily_operations(learner_id, role):
+    env_type = active_config.get("env_type", "clinical")
+    st.markdown("## Daily Operations Command Center")
+
+    # 1. DYNAMIC SCHEDULE
     today_sched = get_todays_schedule(learner_id)
-    
-    if today_sched.empty:
-        st.info("No specific clinical rotations scheduled today. Focus on curriculum modules or project work.")
-        return
+    sched_header = "🕒 My Dynamic Study Schedule" if env_type == "academic" else "🕒 My Dynamic Schedule"
+    st.markdown(f"### {sched_header}")
 
-    rotation_subject = today_sched.iloc[0]['Subject']
-    st.markdown(f"**Assigned Rotation:** `{rotation_subject}`")
-    daily_tasks = rotation_tasks_df[rotation_tasks_df['Rotation_ID'] == rotation_subject].copy()
-    
-    if daily_tasks.empty:
-        st.warning(f"No task mappings found for {rotation_subject}.")
-        return
+    if not today_sched.empty:
+        # Dynamically grab available columns to prevent missing column errors
+        cols_to_show = [c for c in ['Start Time', 'End Time', 'Subject', 'Status'] if c in today_sched.columns]
+        if not cols_to_show: cols_to_show = today_sched.columns.tolist()
+        st.dataframe(today_sched[cols_to_show], hide_index=True, use_container_width=True)
+    else:
+        st.info("No specific blocks scheduled for today. Check your upcoming schedule below.")
 
-    if current_role == "learner":
-        st.info("💡 **Today's Focus:** Review your daily operational tasks below.")
-        show_all_tasks = st.toggle("View all available rotation tasks", value=False)
-        today_str = datetime.today().strftime('%Y-%m-%d')
-        seed_string = f"{learner_id}_{rotation_subject}_{today_str}"
-        daily_seed = zlib.crc32(seed_string.encode())
-        
-        if not show_all_tasks and len(daily_tasks) > 5:
-            display_tasks = daily_tasks.sample(n=5, random_state=daily_seed)
+    st.markdown("---")
+
+    # 2. DYNAMIC MODULES/TOPICS
+    task_header = "📚 Today's Study Modules & Activities" if env_type == "academic" else "📋 Today's Clinical Policies & Activities"
+    st.markdown(f"### {task_header}")
+
+    if not task_mapping_df.empty:
+        # Safe column selection based on what actually exists in your CSV
+        available_cols = task_mapping_df.columns.tolist()
+        view_cols = []
+        if "Rotation_ID" in available_cols: view_cols.append("Rotation_ID")
+        if "Actionable_Activity" in available_cols: view_cols.append("Actionable_Activity")
+        if "Clinical_Policy" in available_cols: view_cols.append("Clinical_Policy")
+        if "Policy_Link" in available_cols: view_cols.append("Policy_Link")
+
+        if view_cols:
+            st.dataframe(
+                task_mapping_df[view_cols],
+                column_config={"Policy_Link": st.column_config.LinkColumn("Resource Link") if "Policy_Link" in view_cols else None},
+                hide_index=True,
+                use_container_width=True
+            )
         else:
-            display_tasks = daily_tasks
-        
-        for idx, row in display_tasks.iterrows():
-            action_text = row.get('Actionable_Activity', 'General Clinical Action')
-            policy_name = row.get('Clinical_Policy', 'Standard Clinical Guidelines')
-            policy_link = row.get('Policy_Link', '')
-            sub_obj = str(row.get('ASHP_Sub_Objective', ''))
-            
-            obj_code = sub_obj.replace('"', '').strip().split(' ')[0] if sub_obj and sub_obj != "nan" else "ROTATION_EXPECTATION"
-            display_policy = policy_name if pd.notna(policy_name) and policy_name != "nan" else "Standard Departmental Policy"
-            
-            st.markdown(f"#### 🎯 {action_text}")
-            with st.expander(f"📘 Policy & Application Details: {display_policy}", expanded=False):
-                st.markdown(f"**Objective `{obj_code}`**")
-                if pd.notna(policy_link) and str(policy_link).strip() != "" and str(policy_link) != "nan":
-                    st.link_button(f"🔗 Review Policy", str(policy_link), type="primary")
-                    
-                if st.button(f"Mark Complete", key=f"complete_btn_{learner_id}_{rotation_subject}_{idx}"):
-                    pass
-            st.divider()
+            st.dataframe(task_mapping_df, hide_index=True, use_container_width=True)
+    else:
+        st.info("No modules mapped for today.")
 
 def render_assignments(learner_id):
     st.subheader("📝 Pending Assignments & Tasks")
@@ -1468,33 +1465,52 @@ elif user_role == "learner":
                         id_col = fallback
                         break
                         
-            # Final check before filtering
+            # --- DYNAMIC UPCOMING SCHEDULE ---
+        env_type = active_config.get("env_type", "clinical")
+        sched_header = "📅 Upcoming Study Schedule" if env_type == "academic" else "📅 Upcoming Shifts"
+        st.subheader(sched_header)
+
+        if not schedule_df.empty:
+            # Safe learner ID mapping
+            id_col = active_config.get("learner_id_column", "Learner_ID")
             if id_col not in schedule_df.columns:
-                st.warning(f"⚠️ Schedule Error: Could not find a matching student name column.")
-                my_sched_all = pd.DataFrame()
-            else:
+                id_col = active_config.get("learner_column", "Resident Name")
+
+            if id_col not in schedule_df.columns:
+                possible_fallbacks = ["Candidate Name", "Resident", "Resident Name", "Student Name", "Student", "Name", "Learner"]
+                for fallback in possible_fallbacks:
+                    if fallback in schedule_df.columns:
+                        id_col = fallback
+                        break
+
+            if id_col in schedule_df.columns:
                 my_sched_all = schedule_df[schedule_df[id_col] == logged_in_id].copy()
-                
-            date_col = 'Start Date' if 'Start Date' in schedule_df.columns else 'Date'
-            
-            if not my_sched_all.empty and date_col in my_sched_all.columns:
-                my_sched_all[date_col] = pd.to_datetime(my_sched_all[date_col], errors='coerce')
-                today_date = pd.to_datetime(datetime.today().strftime("%Y-%m-%d"))
-                
-                future_sched = my_sched_all[my_sched_all[date_col] >= today_date].sort_values(by=date_col).head(5)
-                
-                if not future_sched.empty:
-                    future_sched[date_col] = future_sched[date_col].dt.strftime('%Y-%m-%d')
-                    display_cols = ['Subject', date_col]
-                    if 'Start Time' in future_sched.columns: display_cols.append('Start Time')
-                    st.table(future_sched[display_cols])
+                date_col = 'Start Date' if 'Start Date' in schedule_df.columns else 'Date'
+
+                if not my_sched_all.empty and date_col in my_sched_all.columns:
+                    try:
+                        # Robust date parsing (ignores bad text safely)
+                        my_sched_all[date_col] = pd.to_datetime(my_sched_all[date_col], errors='coerce')
+                        my_sched_all = my_sched_all.dropna(subset=[date_col])
+
+                        today_date = pd.to_datetime('today').normalize()
+                        future_sched = my_sched_all[my_sched_all[date_col] >= today_date].sort_values(by=date_col)
+
+                        if not future_sched.empty:
+                            future_sched[date_col] = future_sched[date_col].dt.strftime('%Y-%m-%d')
+                            display_cols = ['Subject', date_col]
+                            if 'Start Time' in future_sched.columns: display_cols.append('Start Time')
+                            st.table(future_sched[display_cols])
+                        else:
+                            st.info("No upcoming sessions scheduled. Enjoy the downtime!")
+                    except Exception as e:
+                        st.warning(f"Schedule dates could not be parsed. Error: {e}")
                 else:
-                    st.info("No upcoming shifts scheduled. Enjoy the downtime!")
+                    st.info("No upcoming schedule data found for your user.")
             else:
-                st.warning("Schedule dates could not be parsed.")
+                st.warning("⚠️ Schedule Error: Could not find a matching student name column.")
         else:
             st.warning("Schedule data unavailable.")
-        # ---------------------------------------
         
         st.divider()
         render_step_counter(learner_id=logged_in_id, weekly_goal=5)
