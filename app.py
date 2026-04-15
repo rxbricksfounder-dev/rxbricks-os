@@ -559,7 +559,7 @@ if user_role in ["admin", "preceptor"]:
 def get_learner_mapping(users_dataframe, config):
     if users_dataframe.empty: return {}
     # Broadened search to match robust role logic
-    learners = users_dataframe[users_dataframe['Role'].str.upper().isin(["RESIDENT", "LEARNER", "STUDENT"])]
+    learners = users_dataframe[users_dataframe['Role'].str.upper().isin(["RESIDENT", "LEARNER", "STUDENT", "CANDIDATE"])]
     id_col = config.get("learner_id_column", "Learner_ID")
     if id_col not in users_dataframe.columns:
         id_col = "Name"
@@ -946,41 +946,35 @@ def render_evaluation_tool():
                     
 def get_todays_schedule(target_id=None):
     if schedule_df.empty: return pd.DataFrame()
-    today_str = datetime.today().strftime("%Y-%m-%d")
     
     date_col = 'Start Date' if 'Start Date' in schedule_df.columns else 'Date'
-    
-    # Safety check: Ensure the date column actually exists
-    if date_col not in schedule_df.columns:
+    if date_col not in schedule_df.columns: return pd.DataFrame()
+        
+    try:
+        # FIX: Normalize both dates so they mathematically match perfectly
+        today_date = pd.to_datetime('today').normalize()
+        sched_dates = pd.to_datetime(schedule_df[date_col], errors='coerce').dt.normalize()
+        today_sched = schedule_df[sched_dates == today_date].copy()
+    except Exception:
         return pd.DataFrame()
-        
-    today_sched = schedule_df[schedule_df[date_col] == today_str]
     
-    if target_id:
-        # 1. Try primary ID column
+    if target_id and not today_sched.empty:
         id_col = active_config.get("learner_id_column", "Learner_ID")
-        
-        # 2. Try config fallback
         if id_col not in schedule_df.columns:
             id_col = active_config.get("learner_column", "Resident Name")
             
-        # 3. NEW SAFETY NET: Check for legacy/mismatched column names
         if id_col not in schedule_df.columns:
-            possible_fallbacks = ["Candidate Name", "Resident", "Resident Name", "Student Name", "Student", "Name", "Learner"]
-            
-            column_found = False
-            for fallback in possible_fallbacks:
+            for fallback in ["Candidate Name", "Resident", "Resident Name", "Student Name", "Student", "Name", "Learner"]:
                 if fallback in schedule_df.columns:
                     id_col = fallback
-                    column_found = True
                     break
                     
-            if not column_found:
-                st.warning(f"⚠️ Column mapping error: Could not find '{id_col}' in the Schedule sheet.")
-                return pd.DataFrame() # Return safely instead of crashing
-                
-        today_sched = today_sched[today_sched[id_col] == target_id]
-        
+        if id_col in schedule_df.columns:
+            # FIX: Strip trailing spaces to guarantee a match
+            today_sched = today_sched[today_sched[id_col].astype(str).str.strip() == str(target_id).strip()]
+        else:
+            return pd.DataFrame()
+            
     return today_sched
 
 def render_daily_operations(learner_id, role):
@@ -1439,22 +1433,31 @@ elif user_role == "learner":
         st.divider()
         st.subheader("📅 My Dynamic Study Schedule")
         if not schedule_df.empty: 
-            sched_df = schedule_df 
-            learner_col = active_config.get('learner_column', 'Resident Name')
+            sched_df = schedule_df.copy()
+            
+            # FIX: Include the fallback logic here so it finds 'Candidate Name'
+            learner_col = active_config.get("learner_id_column", "Learner_ID")
+            if learner_col not in sched_df.columns:
+                learner_col = active_config.get("learner_column", "Resident Name")
+            if learner_col not in sched_df.columns:
+                for fallback in ["Candidate Name", "Resident", "Resident Name", "Student Name", "Student", "Name", "Learner"]:
+                    if fallback in sched_df.columns:
+                        learner_col = fallback
+                        break
             
             if learner_col in sched_df.columns and 'Start Date' in sched_df.columns:
-                my_sched = sched_df[sched_df[learner_col] == logged_in_id].copy()
+                # FIX: Strip whitespace for guaranteed match
+                my_sched = sched_df[sched_df[learner_col].astype(str).str.strip() == str(logged_in_id).strip()].copy()
                 my_sched['Start Date'] = pd.to_datetime(my_sched['Start Date'], errors='coerce')
                 
-                # Filter for today and future
-                today_date = pd.to_datetime(datetime.now().date())
-                future_sched = my_sched[my_sched['Start Date'] >= today_date].sort_values(by='Start Date')
+                today_date = pd.to_datetime('today').normalize()
+                future_sched = my_sched[my_sched['Start Date'].dt.normalize() >= today_date].sort_values(by='Start Date')
                 
                 if not future_sched.empty:
+                    future_sched['Start Date'] = future_sched['Start Date'].dt.strftime('%Y-%m-%d')
                     display_cols = ['Subject', 'Start Date', 'Status', 'Priority_Tier', 'Estimated_Hours']
                     display_cols = [c for c in display_cols if c in future_sched.columns]
                     
-                    # --- NEW: Interactive Cascade Controls ---
                     col1, col2 = st.columns([3, 1])
                     with col1:
                         st.dataframe(future_sched[display_cols], use_container_width=True, hide_index=True)
@@ -1463,11 +1466,9 @@ elif user_role == "learner":
                         st.info("💡 **Fell behind?**")
                         if st.button("🚨 Mark Today Missed & Recalculate", use_container_width=True):
                             with st.spinner("Cascading schedule..."):
-                                # 1. Mark today's pending tasks as Missed
-                                today_mask = (sched_df[learner_col] == logged_in_id) & (pd.to_datetime(sched_df['Start Date'], errors='coerce') == today_date)
+                                today_mask = (sched_df[learner_col] == logged_in_id) & (pd.to_datetime(sched_df['Start Date'], errors='coerce').dt.normalize() == today_date)
                                 sched_df.loc[today_mask, 'Status'] = 'Missed'
                                 
-                                # 2. Run the cascade algorithm
                                 exam_date = ""
                                 if not users_df.empty and 'Exam_Date' in users_df.columns: 
                                     user_row = users_df[users_df['Username'] == st.session_state["username"]]
@@ -1476,17 +1477,14 @@ elif user_role == "learner":
 
                                 new_sched, msg = recalculate_cascade(sched_df, learner_col, logged_in_id, exam_date)
                                 
-                                # 3. Save and refresh
                                 if "successfully" in msg:
                                     save_schedule_to_sheet(active_sheet_name, new_sched)
                                     st.success(msg)
                                     st.rerun()
                                 else:
                                     st.warning(msg)
-                    # ---------------------------------------
                 else:
                     st.info("No upcoming tasks scheduled.")
-        # ------------------------------------------
             
     with tab2:
         render_curriculum(user_role, user_tier)
@@ -1525,7 +1523,7 @@ elif user_role == "learner":
                         break
 
             if id_col in schedule_df.columns:
-                my_sched_all = schedule_df[schedule_df[id_col] == logged_in_id].copy()
+                my_sched_all = schedule_df[schedule_df[id_col].astype(str).str.strip() == str(logged_in_id).strip()].copy()
                 date_col = 'Start Date' if 'Start Date' in schedule_df.columns else 'Date'
 
                 if not my_sched_all.empty and date_col in my_sched_all.columns:
