@@ -22,7 +22,7 @@ PROGRAM_CONFIG = {
         "learner_column": "Resident Name",
         "standards_column": "ASHP Standards",
         "learner_id_column": "Learner_ID",
-        # NEW: Terminology mapping
+        "env_type": "clinical", # NEW: AI Context flag
         "nomenclature": {
             "learner": "Resident",
             "educator": "Preceptor",
@@ -32,12 +32,10 @@ PROGRAM_CONFIG = {
             "eval_system": "PharmAcademic",
             "accreditation": "ASHP"
         },
-        # NEW: Program-specific settings
         "eval_settings": {
             "grading_scale": ["ACHR", "ACH", "SP", "NI"],
             "entrustment_scale": ["1 - Knows", "2 - Knows How", "3 - Shows How", "4 - Does"],
             "rotations": ["CORE - 1 - EM", "CORE - 2 - EM", "CORE - 3 - ICU", "ELEC - Tox"] 
-            # Note: Rotations ideally should be loaded dynamically from schedule_df if possible
         }
     },
     "APPE_CLINICAL": {
@@ -48,13 +46,14 @@ PROGRAM_CONFIG = {
         "learner_column": "Student Name",
         "standards_column": "EPA Description",
         "learner_id_column": "Learner_ID",
+        "env_type": "clinical", # NEW: AI Context flag
         "nomenclature": {
             "learner": "Student",
             "educator": "Preceptor",
             "director": "Course Coordinator",
             "committee": "Curriculum Committee",
             "committee_short": "CC",
-            "eval_system": "CoreELMS", # Or whichever system they use
+            "eval_system": "CoreELMS",
             "accreditation": "ACPE"
         },
         "eval_settings": {
@@ -63,26 +62,28 @@ PROGRAM_CONFIG = {
             "rotations": ["Ambulatory Care", "Acute Care", "Community", "Hospital"]
         }
     },
-    "HYMR_PREP": {
-        "program_name": "High-Yield Med Reviews - Board Prep",
-        "sheet_name": "https://docs.google.com/spreadsheets/d/1aag5kr_cxun18AyCs_E0-dzRtkGWmgrRYDEbveKG-yw/edit?usp=sharing",
-        "standards_tab": "HYMR_Standards",
-        "evaluation_column": "Topic Objective",
-        "learner_column": "Candidate Name",
-        "standards_column": "HYMR Standards",
+    "NAPLEX_PREP": {
+        "program_name": "NAPLEX Readiness Program",
+        "sheet_name": "https://docs.google.com/spreadsheets/d/1aag5kr_cxun18AyCs_E0-dzRtkGWmgrRYDEbveKG-yw/edit?usp=sharing", # Update with NAPLEX specific sheet URL
+        "standards_tab": "NAPLEX_Competencies",
+        "evaluation_column": "Competency Area",
+        "learner_column": "Student Name",
+        "standards_column": "Competency Statement",
         "learner_id_column": "Learner_ID",
+        "env_type": "academic", # NEW: AI Context flag
         "nomenclature": {
             "learner": "Candidate",
-            "educator": "Coach",
-            "director": "Program Administrator",
-            "committee": "SME Review Board",
-            "committee_short": "SME",
-            "eval_system": "Adaptive Phenotype Engine",
-            "accreditation": "HYMR"
+            "educator": "Academic Coach",
+            "director": "Exam Coordinator",
+            "committee": "Curriculum Board",
+            "committee_short": "CC",
+            "eval_system": "RxBricks Tracker",
+            "accreditation": "NABP"
         },
         "eval_settings": {
-            "grading_scale": ["Mastered", "Progressing", "Needs Review", "Critical Gap"],
-            "entrustment_scale": ["Independent", "Guided", "Direct Supervision"]
+            "grading_scale": ["Competent", "Borderline", "Deficient"],
+            "entrustment_scale": ["Calculation", "Brand/Generic", "Clinical Scenario"],
+            "rotations": ["Foundations", "Ambulatory Care", "Acute Care", "Calculations"]
         }
     }
 }
@@ -321,23 +322,29 @@ def generate_ai_evaluation(raw_dictation, learner_name, rotation, topic, zone, c
     
     nom = config["nomenclature"]
     eval_sys = nom["eval_system"]
+    env_type = config.get("env_type", "clinical")
+    
+    if env_type == "academic":
+        role_context = f"an expert Academic Coach evaluating foundational knowledge, exam study rationale, and calculation accuracy."
+    else:
+        role_context = f"an expert Clinical Preceptor evaluating direct patient care and clinical autonomy."
     
     prompt = f"""
-    You are an expert {nom['director']}.
-    First, evaluate the quality of the raw {nom['educator'].lower()} dictation. Then, format it into a highly professional clinical evaluation.
+    You are {role_context}.
+    First, evaluate the quality of the raw {nom['educator'].lower()} dictation. Then, format it into a highly professional evaluation.
     
     Context:
     * {nom['learner']}: {learner_name}
-    * Rotation: {rotation}
-    * Topic/Action: {topic}
-    * Target Zone: {zone}
+    * Module/Rotation: {rotation}
+    * Target {config['evaluation_column'].split(' ')[-1]}: {topic}
+    * Focus Area: {zone}
     
     Raw {nom['educator']} Dictation:
     {raw_dictation}
     
     Output Requirements:
     Return ONLY a strict JSON object with exactly these 6 keys:
-    1. "QualityGrade": String ("Green", "Yellow", or "Red"). Red means the dictation was lazy or lacked clinical context.
+    1. "QualityGrade": String ("Green", "Yellow", or "Red"). Red means the dictation was lazy or lacked appropriate context.
     2. "QualityFeedback": String (1 short sentence of direct coaching to the {nom['educator'].lower()} explaining *why* their dictation scored that grade).
     3. "Grade": Must be one of: {', '.join(config['eval_settings']['grading_scale'])}.
     4. "Comment": A 1-2 sentence professional assessment.
@@ -802,8 +809,11 @@ def render_evaluation_tool():
 
     col_a, col_b = st.columns(2)
     with col_a:
-        selected_rotation = st.selectbox("Rotation", eval_set.get("rotations", ["Default"]), key=f"rot_{target_res_id}")
-        selected_action = st.selectbox("Clinical Action / Topic", topics, key=f"act_{target_res_id}")
+        # NEW: Dynamic UI labeling based on config
+        target_label = f"Target {active_config['evaluation_column'].split(' ')[-1]} / Topic"
+        
+        selected_rotation = st.selectbox("Module / Rotation", eval_set.get("rotations", ["Default"]), key=f"rot_{target_res_id}")
+        selected_action = st.selectbox(target_label, topics, key=f"act_{target_res_id}")
     with col_b:
         zone_action = st.selectbox("Target Entrustment", eval_set.get("entrustment_scale", ["1", "2", "3", "4"]), key=f"zone_{target_res_id}")
         
@@ -930,7 +940,7 @@ def render_assignments(learner_id):
         
     learner_name = learner_dict.get(learner_id, learner_id)
     if 'Assigned To' in assignments_df.columns:
-        assignments_df['Assigned To'] = assignments_df['Assigned To'].fillna("All PGY2")
+        assignments_df['Assigned To'] = assignments_df['Assigned To'].fillna("All")
         mask = assignments_df['Assigned To'].apply(
             lambda x: learner_name.lower() in str(x).lower() or "all" in str(x).lower()
         )
@@ -941,21 +951,32 @@ def render_assignments(learner_id):
     if 'Start Date' in user_assignments.columns:
         user_assignments['Start Date'] = pd.to_datetime(user_assignments['Start Date'], errors='coerce')
         today = pd.to_datetime(datetime.today())
-        upcoming_assign = user_assignments[user_assignments['Start Date'] >= today].sort_values(by='Start Date').head(5)
+        upcoming_assign = user_assignments[user_assignments['Start Date'] >= today].sort_values(by='Start Date').head(10)
     else:
-        upcoming_assign = user_assignments.head(5)
+        upcoming_assign = user_assignments.head(10)
 
     if upcoming_assign.empty:
         st.success("🎉 You have no pending assignments right now!")
         return
 
-    for idx, row in upcoming_assign.iterrows():
-        assign_title = row.get('Subject', 'Unknown Assignment')
-        form_link = row.get('Form Link', "https://docs.google.com/forms")
+    # NEW: Categorize tasks by splitting the prefix (e.g., "LECTURE: Biostats" -> "LECTURE")
+    upcoming_assign['Task_Type'] = upcoming_assign['Subject'].apply(
+        lambda x: str(x).split(':')[0].strip().upper() if ':' in str(x) else 'GENERAL TASK'
+    )
+    
+    # Iterate through the groups to create clean visual categories
+    for task_type, group in upcoming_assign.groupby('Task_Type'):
+        st.markdown(f"#### 🔹 {task_type}")
+        
+        for idx, row in group.iterrows():
+            # Strip the prefix from the display title
+            raw_title = str(row.get('Subject', 'Unknown Assignment'))
+            assign_title = raw_title.split(':', 1)[-1].strip() if ':' in raw_title else raw_title
+            form_link = row.get('Form Link', "https://docs.google.com/forms")
 
-        with st.expander(f"📌 **{assign_title}**", expanded=(idx==0)):
-            st.link_button("1️⃣ Open Assignment Form", form_link, type="primary")
-            st.checkbox("2️⃣ Mark as Submitted", key=f"submit_{learner_id}_{assign_title}_{idx}")
+            with st.expander(f"📌 **{assign_title}**", expanded=False):
+                st.link_button("1️⃣ Open Assignment / Resource", form_link, type="primary")
+                st.checkbox("2️⃣ Mark as Submitted / Complete", key=f"submit_{learner_id}_{raw_title}_{idx}")
 
 # FIXED: Completed this previously hanging function
 def render_assignment_tracker():
