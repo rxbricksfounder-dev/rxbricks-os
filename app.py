@@ -22,7 +22,13 @@ PROGRAM_CONFIG = {
         "learner_column": "Resident Name",
         "standards_column": "ASHP Standards",
         "learner_id_column": "Learner_ID",
-        "env_type": "clinical", # NEW: AI Context flag
+        "env_type": "clinical",
+        "target_goals": {                                  # <--- ADD THIS BLOCK
+            "R1.1.1 (Therapeutic Regimens)": 10,
+            "R1.1.8 (Patient Outcomes)": 10,
+            "R5.1.1 (Medical Emergencies)": 5,
+            "E7.1.1 (Pre-hospital Teamwork)": 3
+        },
         "nomenclature": {
             "learner": "Resident",
             "educator": "Preceptor",
@@ -313,6 +319,25 @@ def recalculate_cascade(schedule_df, learner_column, learner_id, exam_date_str, 
             day_loads[assigned_day] += hours
 
     return schedule_df, "Schedule successfully recalibrated."
+
+def render_progress(col_target, items, working_df, eval_col):
+    with col_target:
+        for item in items:
+            objective_name = item[0]
+            target_amount = item[1] 
+            
+            objective_code = str(objective_name).split(' ')[0] if pd.notna(objective_name) else ""
+            
+            if eval_col in working_df.columns:
+                current_count = len(working_df[working_df[eval_col].astype(str).str.contains(objective_code, na=False, regex=False)])
+            else:
+                current_count = 0 
+                
+            progress_val = min(current_count / target_amount, 1.0) if target_amount > 0 else 0.0
+            
+            st.markdown(f"**{objective_name[:40]}...**")
+            st.progress(progress_val)
+            st.caption(f"{current_count} / {target_amount} Logged")
 # ==========================================\
 # 2. AI ENGINES
 # ==========================================\
@@ -1113,13 +1138,6 @@ if user_role == "admin":
         
         # 3. We already fetched live_eval_df above, so we can just use it immediately
         if not live_eval_df.empty:
-            target_goals = {
-                "R1.1.1 (Therapeutic Regimens)": 10,
-                "R1.1.8 (Patient Outcomes)": 10,
-                "R5.1.1 (Medical Emergencies)": 5,
-                "E7.1.1 (Pre-hospital Teamwork)": 3
-            }
-            
             view_mode = st.radio("Select View", ["Program Overview", f"By {nom['learner']}"], horizontal=True)
             if view_mode == f"By {nom['learner']}":
                 selected_res_id = st.selectbox(
@@ -1130,6 +1148,29 @@ if user_role == "admin":
                 working_df = get_learner_evals(live_eval_df, active_config, selected_res_id)
             else:
                 working_df = live_eval_df
+
+            st.divider()
+            col1, col2 = st.columns(2)
+            
+            # Fetch goals dynamically from the global config
+            target_goals = active_config.get("target_goals", {})
+            items = list(target_goals.items())
+            
+            eval_col = active_config.get('evaluation_column', 'ASHP Objective')
+            if eval_col not in working_df.columns:
+                possible_eval_cols = ["ASHP Objective", "Competency Area", "Objective", "Target", "Area"]
+                for fallback in possible_eval_cols:
+                    if fallback in working_df.columns:
+                        eval_col = fallback
+                        break
+
+            # Execute the globally defined function
+            if items: 
+                half_point = len(items) // 2
+                render_progress(col1, items[:half_point], working_df, eval_col)
+                render_progress(col2, items[half_point:], working_df, eval_col)
+            else:
+                st.info("No evaluation data found. Start logging evaluations to see progress here!")
 
             st.divider()
             col1, col2 = st.columns(2)
