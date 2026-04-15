@@ -953,9 +953,10 @@ def render_daily_operations(learner_id, role):
     task_header = "📚 Today's Study Modules & Activities" if env_type == "academic" else "📋 Today's Clinical Policies & Activities"
     st.markdown(f"### {task_header}")
 
-    if not task_mapping_df.empty:
+    # FIXED: Changed task_mapping_df to rotation_tasks_df to match global variable
+    if not rotation_tasks_df.empty:
         # Safe column selection based on what actually exists in your CSV
-        available_cols = task_mapping_df.columns.tolist()
+        available_cols = rotation_tasks_df.columns.tolist()
         view_cols = []
         if "Rotation_ID" in available_cols: view_cols.append("Rotation_ID")
         if "Actionable_Activity" in available_cols: view_cols.append("Actionable_Activity")
@@ -964,13 +965,13 @@ def render_daily_operations(learner_id, role):
 
         if view_cols:
             st.dataframe(
-                task_mapping_df[view_cols],
+                rotation_tasks_df[view_cols],
                 column_config={"Policy_Link": st.column_config.LinkColumn("Resource Link") if "Policy_Link" in view_cols else None},
                 hide_index=True,
                 use_container_width=True
             )
         else:
-            st.dataframe(task_mapping_df, hide_index=True, use_container_width=True)
+            st.dataframe(rotation_tasks_df, hide_index=True, use_container_width=True)
     else:
         st.info("No modules mapped for today.")
 
