@@ -160,6 +160,23 @@ def log_evaluation_to_sheet(preceptor, resident, rotation, objective, criteria, 
         st.error(f"Error writing to Google Sheets: {e}")
         return False
 
+def clean_headers(header_list):
+    """Sanitizes Google Sheet headers to prevent PyArrow duplicate crashes."""
+    seen = {}
+    cleaned = []
+    for i, h in enumerate(header_list):
+        base_name = str(h).strip()
+        if not base_name:
+            base_name = f"Unnamed_Col_{i}"
+        
+        if base_name in seen:
+            seen[base_name] += 1
+            cleaned.append(f"{base_name}_{seen[base_name]}")
+        else:
+            seen[base_name] = 0
+            cleaned.append(base_name)
+    return cleaned
+
 @st.cache_data(ttl=60)
 def get_evaluation_log(sheet_name):
     client = get_gspread_client()
@@ -172,10 +189,10 @@ def get_evaluation_log(sheet_name):
         else:
             sheet = client.open(sheet_name).worksheet("3_Evaluation_Log")
             
-        # ULTIMATE FIX: Bypass gspread's strict header validation
+        # ULTIMATE FIX: Bypass gspread's strict header validation and sanitize
         raw_data = sheet.get_all_values()
         if raw_data and len(raw_data) > 0:
-            headers = raw_data.pop(0)
+            headers = clean_headers(raw_data.pop(0)) # <--- APPLIED HERE
             df = pd.DataFrame(raw_data, columns=headers)
         else:
             df = pd.DataFrame()
@@ -206,14 +223,14 @@ def load_all_data(sheet_name, standards_tab_name):
         
     def fetch_sheet(ws_name):
         try:
-            # ULTIMATE FIX: Bypass gspread's strict header validation
+            # ULTIMATE FIX: Bypass gspread's strict header validation and sanitize
             raw_data = spreadsheet.worksheet(ws_name).get_all_values()
             if raw_data and len(raw_data) > 0:
-                headers = raw_data.pop(0)
+                headers = clean_headers(raw_data.pop(0)) # <--- APPLIED HERE
                 return pd.DataFrame(raw_data, columns=headers)
             return pd.DataFrame()
         except Exception as e:
-            st.warning(f"🚨 Data Parsing Error in tab '{ws_name}': {e}. (Check for blank headers or duplicate column names!)")
+            st.warning(f"🚨 Data Parsing Error in tab '{ws_name}': {e}")
             return pd.DataFrame()
 
     curr = fetch_sheet("1_Curriculum")
