@@ -1136,7 +1136,6 @@ if user_role == "admin":
         
         st.subheader(f"📊 {nom['accreditation']} Accreditation Step Tracker")
         
-        # 3. We already fetched live_eval_df above, so we can just use it immediately
         if not live_eval_df.empty:
             view_mode = st.radio("Select View", ["Program Overview", f"By {nom['learner']}"], horizontal=True)
             if view_mode == f"By {nom['learner']}":
@@ -1152,59 +1151,22 @@ if user_role == "admin":
             st.divider()
             col1, col2 = st.columns(2)
             
-            # Fetch goals dynamically from the global config
             target_goals = active_config.get("target_goals", {})
             items = list(target_goals.items())
             
             eval_col = active_config.get('evaluation_column', 'ASHP Objective')
             if eval_col not in working_df.columns:
-                possible_eval_cols = ["ASHP Objective", "Competency Area", "Objective", "Target", "Area"]
-                for fallback in possible_eval_cols:
+                for fallback in ["ASHP Objective", "Competency Area", "Objective", "Target", "Area"]:
                     if fallback in working_df.columns:
                         eval_col = fallback
                         break
 
-            # Execute the globally defined function
             if items: 
                 half_point = len(items) // 2
                 render_progress(col1, items[:half_point], working_df, eval_col)
                 render_progress(col2, items[half_point:], working_df, eval_col)
             else:
-                st.info("No evaluation data found. Start logging evaluations to see progress here!")
-
-            st.divider()
-            col1, col2 = st.columns(2)
-            items = list(target_goals.items())
-            half_point = len(items) // 2
-    
-            # The engine we just fixed
-        def render_progress(col_target, items):
-            with col_target:
-                for item in items:
-                    # 1. Extract the name and the target number from the item pair
-                    objective_name = item[0]
-                    target_amount = item[1] 
-                    
-                    objective_code = str(objective_name).split(' ')[0] if pd.notna(objective_name) else ""
-                    
-                    if eval_col in working_df.columns:
-                        current_count = len(working_df[working_df[eval_col].astype(str).str.contains(objective_code, na=False, regex=False)])
-                    else:
-                        current_count = 0 
-                        
-                    # 2. Replaced the missing TARGET_EVALS_PER_OBJECTIVE with the actual target_amount
-                    progress_val = min(current_count / target_amount, 1.0) if target_amount > 0 else 0.0
-                    
-                    st.markdown(f"**{objective_name[:40]}...**")
-                    st.progress(progress_val)
-                    # 3. Ensure the text below the bar shows the correct target amount too
-                    st.caption(f"{current_count} / {target_amount} Logged")
-
-        # The layout manager (KEEP THIS)
-        if items:  # <-- Changed here to properly check a Python list
-            half_point = len(items) // 2
-            render_progress(col1, items[:half_point])
-            render_progress(col2, items[half_point:])
+                st.info("No target goals are configured in the PROGRAM_CONFIG for this environment.")
         else:
             st.info("No evaluation data found. Start logging evaluations to see progress here!")
 
