@@ -1140,26 +1140,24 @@ if user_role == "admin":
         def render_progress(col_target, items):
             with col_target:
                 for item in items:
-                    objective_code = str(item).split(' ')[0] if pd.notna(item) else ""
+                    # 1. Extract the name and the target number from the item pair
+                    objective_name = item[0]
+                    target_amount = item[1] 
                     
-                    eval_col = active_config.get('evaluation_column', 'ASHP Objective')
-                    if eval_col not in working_df.columns:
-                        possible_eval_cols = ["ASHP Objective", "Competency Area", "Objective", "Target", "Area"]
-                        for fallback in possible_eval_cols:
-                            if fallback in working_df.columns:
-                                eval_col = fallback
-                                break
+                    objective_code = str(objective_name).split(' ')[0] if pd.notna(objective_name) else ""
                     
                     if eval_col in working_df.columns:
                         current_count = len(working_df[working_df[eval_col].astype(str).str.contains(objective_code, na=False, regex=False)])
                     else:
                         current_count = 0 
                         
-                    progress_val = min(current_count / TARGET_EVALS_PER_OBJECTIVE, 1.0)
+                    # 2. Replaced the missing TARGET_EVALS_PER_OBJECTIVE with the actual target_amount
+                    progress_val = min(current_count / target_amount, 1.0) if target_amount > 0 else 0.0
                     
-                    st.markdown(f"**{item[:40]}...**")
+                    st.markdown(f"**{objective_name[:40]}...**")
                     st.progress(progress_val)
-                    st.caption(f"{current_count} / {TARGET_EVALS_PER_OBJECTIVE} Logged")
+                    # 3. Ensure the text below the bar shows the correct target amount too
+                    st.caption(f"{current_count} / {target_amount} Logged")
 
         # The layout manager (KEEP THIS)
         if items:  # <-- Changed here to properly check a Python list
