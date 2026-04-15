@@ -896,13 +896,38 @@ def get_todays_schedule(target_id=None):
     today_str = datetime.today().strftime("%Y-%m-%d")
     
     date_col = 'Start Date' if 'Start Date' in schedule_df.columns else 'Date'
+    
+    # Safety check: Ensure the date column actually exists
+    if date_col not in schedule_df.columns:
+        return pd.DataFrame()
+        
     today_sched = schedule_df[schedule_df[date_col] == today_str]
     
     if target_id:
+        # 1. Try primary ID column
         id_col = active_config.get("learner_id_column", "Learner_ID")
+        
+        # 2. Try config fallback
         if id_col not in schedule_df.columns:
             id_col = active_config.get("learner_column", "Resident Name")
+            
+        # 3. NEW SAFETY NET: Check for legacy/mismatched column names
+        if id_col not in schedule_df.columns:
+            possible_fallbacks = ["Candidate Name", "Resident", "Resident Name", "Student Name", "Student", "Name", "Learner"]
+            
+            column_found = False
+            for fallback in possible_fallbacks:
+                if fallback in schedule_df.columns:
+                    id_col = fallback
+                    column_found = True
+                    break
+                    
+            if not column_found:
+                st.warning(f"⚠️ Column mapping error: Could not find '{id_col}' in the Schedule sheet.")
+                return pd.DataFrame() # Return safely instead of crashing
+                
         today_sched = today_sched[today_sched[id_col] == target_id]
+        
     return today_sched
 
 def render_daily_operations(learner_id, current_role):
