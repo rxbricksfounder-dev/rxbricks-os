@@ -1449,9 +1449,7 @@ elif user_role == "learner":
     with tab2:
         render_curriculum(user_role, user_tier)
         
-    with tab3:
-        st.subheader("📅 Upcoming Shifts")
-        
+    with tab3:     
         if not schedule_df.empty:
             id_col = active_config.get("learner_id_column", "Learner_ID")
             
