@@ -133,7 +133,12 @@ def log_evaluation_to_sheet(preceptor, resident, rotation, objective, criteria, 
     if not client: return False
     
     try:
-        sheet = client.open(active_sheet_name).worksheet("3_Evaluation_Log")
+        # NEW: Handle URLs for HYMR module
+        if "http" in active_sheet_name:
+            sheet = client.open_by_url(active_sheet_name).worksheet("3_Evaluation_Log")
+        else:
+            sheet = client.open(active_sheet_name).worksheet("3_Evaluation_Log")
+            
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         row_data = [
@@ -142,7 +147,7 @@ def log_evaluation_to_sheet(preceptor, resident, rotation, objective, criteria, 
             ai_quality_grade, pharmacademic_text
         ]
         sheet.append_row(row_data)
-        get_evaluation_log.clear() # Clear cache so new data shows immediately
+        get_evaluation_log.clear() 
         return True
     except Exception as e:
         st.error(f"Error writing to Google Sheets: {e}")
@@ -154,7 +159,12 @@ def get_evaluation_log(sheet_name):
     if not client: return pd.DataFrame()
     
     try:
-        sheet = client.open(sheet_name).worksheet("3_Evaluation_Log")
+        # NEW: Handle URLs for HYMR module
+        if "http" in sheet_name:
+            sheet = client.open_by_url(sheet_name).worksheet("3_Evaluation_Log")
+        else:
+            sheet = client.open(sheet_name).worksheet("3_Evaluation_Log")
+            
         df = pd.DataFrame(sheet.get_all_records())
         
         if not df.empty:
