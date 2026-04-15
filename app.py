@@ -1454,13 +1454,27 @@ elif user_role == "learner":
     with tab3:
         st.subheader("📅 Upcoming Shifts")
         
-        # --- RESTORED: Upcoming Shifts Table ---
         if not schedule_df.empty:
             id_col = active_config.get("learner_id_column", "Learner_ID")
+            
             if id_col not in schedule_df.columns:
                 id_col = active_config.get("learner_column", "Resident Name")
                 
-            my_sched_all = schedule_df[schedule_df[id_col] == logged_in_id].copy()
+            # THE SAFETY NET
+            if id_col not in schedule_df.columns:
+                possible_fallbacks = ["Candidate Name", "Resident", "Resident Name", "Student Name", "Student", "Name", "Learner"]
+                for fallback in possible_fallbacks:
+                    if fallback in schedule_df.columns:
+                        id_col = fallback
+                        break
+                        
+            # Final check before filtering
+            if id_col not in schedule_df.columns:
+                st.warning(f"⚠️ Schedule Error: Could not find a matching student name column.")
+                my_sched_all = pd.DataFrame()
+            else:
+                my_sched_all = schedule_df[schedule_df[id_col] == logged_in_id].copy()
+                
             date_col = 'Start Date' if 'Start Date' in schedule_df.columns else 'Date'
             
             if not my_sched_all.empty and date_col in my_sched_all.columns:
