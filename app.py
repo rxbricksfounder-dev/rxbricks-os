@@ -264,9 +264,10 @@ def load_all_data(sheet_name, standards_tab_name):
     assign_df = fetch_sheet("5_Assignments")
     rotation_tasks_df = fetch_sheet("7_Rotation_Task_Mapping")
     ashp_df = fetch_sheet(standards_tab_name)
+    quiz_df = fetch_sheet("Quiz_Bank")
     
-    dataframes = [curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df]
-    
+    dataframes = [curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df, quiz_df] 
+
     for df in dataframes:
         if not df.empty:
             df.replace("", pd.NA, inplace=True)
@@ -278,13 +279,13 @@ def load_all_data(sheet_name, standards_tab_name):
         if 'End Date' in sched.columns:
             sched['End Date'] = pd.to_datetime(sched['End Date'], errors='coerce')
     
-    return curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df
+    return curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df, quiz_df # <-- ADD quiz_df
     
     sched['Start Date'] = pd.to_datetime(sched['Start Date'], errors='coerce')
     if 'End Date' in sched.columns:
         sched['End Date'] = pd.to_datetime(sched['End Date'], errors='coerce')
         
-curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df, ashp_standards_df = load_all_data(active_sheet_name, active_config["standards_tab"])
+curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df, ashp_standards_df, quiz_bank_df = load_all_data(active_sheet_name, active_config["standards_tab"])
 
 def save_schedule_to_sheet(sheet_name, updated_df):
     """Writes the recalculated schedule back to the 4_Schedule tab."""
@@ -711,6 +712,82 @@ def get_milestone_badges(learner_id):
         }
     return badges
 
+def render_module_quiz(quiz_df, module_id):
+    st.subheader(f"📝 Knowledge Check: {module_id}")
+    
+    # Filter the dataframe for only the current module's questions
+    module_questions = quiz_df[quiz_df['Module_ID'] == module_id]
+    
+    if module_questions.empty:
+        st.info("No quiz questions currently loaded for this module.")
+        return
+
+    # Initialize session state to track score and submission
+    if f"quiz_submitted_{module_id}" not in st.session_state:
+        st.session_state[f"quiz_submitted_{module_id}"] = False
+        st.session_state[f"quiz_score_{module_id}"] = 0
+
+    with st.form(key=f"quiz_form_{module_id}"):
+        user_answers = {}
+        
+        for index, row in module_questions.iterrows():
+            st.markdown(f"**Q{row['Question_Number']}: {row['Question_Text']}**")
+            
+            options = {
+                "Option_A": row['Option_A'],
+                "Option_B": row['Option_B'],
+                "Option_C": row['Option_C'],
+                "Option_D": row['Option_D']
+            }
+            
+            display_options = [f"A) {options['Option_A']}", 
+                               f"B) {options['Option_B']}", 
+                               f"C) {options['Option_C']}", 
+                               f"D) {options['Option_D']}"]
+            
+            user_answers[index] = st.radio(
+                "Select your answer:", 
+                display_options, 
+                key=f"q_{module_id}_{index}",
+                index=None 
+            )
+            st.write("---")
+            
+        submit_button = st.form_submit_button(label="Submit Quiz")
+
+    # --- EVALUATION LOGIC ---
+    if submit_button:
+        score = 0
+        total_questions = len(module_questions)
+        
+        st.subheader("📊 Quiz Results")
+        
+        for index, row in module_questions.iterrows():
+            correct_key = row['Correct_Answer'] 
+            
+            correct_display_text = ""
+            if correct_key == "Option_A": correct_display_text = f"A) {row['Option_A']}"
+            elif correct_key == "Option_B": correct_display_text = f"B) {row['Option_B']}"
+            elif correct_key == "Option_C": correct_display_text = f"C) {row['Option_C']}"
+            elif correct_key == "Option_D": correct_display_text = f"D) {row['Option_D']}"
+
+            user_selection = user_answers[index]
+
+            if user_selection == correct_display_text:
+                score += 1
+                st.success(f"**Q{row['Question_Number']}**: Correct! ✅")
+            else:
+                st.error(f"**Q{row['Question_Number']}**: Incorrect. ❌")
+                st.write(f"*You selected: {user_selection if user_selection else 'No answer'}*")
+                st.write(f"*Correct Answer: {correct_display_text}*")
+            
+            st.info(f"**Explanation:** {row['Answer_Explanation']}")
+            st.write("---")
+            
+        st.metric(label="Final Score", value=f"{score} / {total_questions}")
+        st.session_state[f"quiz_submitted_{module_id}"] = True
+        st.session_state[f"quiz_score_{module_id}"] = score
+
 def render_resident_profile(learner_id, is_preceptor_view=False):
     display_name = learner_dict.get(learner_id, learner_id)
     st.header(f"🎓 Professional Profile: {display_name}")
@@ -793,6 +870,42 @@ def render_resident_profile(learner_id, is_preceptor_view=False):
 # =========================================================
 # UI BLOCKS
 # =========================================================
+def render_module_quiz(quiz_df, topic_name):
+    if pd.isna(topic_name) or not topic_name or quiz_df.empty: return
+    prefix = str(topic_name).split(" ")[0]
+    module_id = f"MOD_{prefix}"
+    module_questions = quiz_df[quiz_df['Module_ID'] == module_id]
+    if module_questions.empty: return
+
+    st.divider()
+    st.subheader(f"📝 Knowledge Check")
+    if f"quiz_sub_{module_id}" not in st.session_state:
+        st.session_state[f"quiz_sub_{module_id}"] = False
+
+    with st.form(key=f"quiz_{module_id}"):
+        user_answers = {}
+        for index, row in module_questions.iterrows():
+            st.markdown(f"**Q{row['Question_Number']}: {row['Question_Text']}**")
+            opts = [f"A) {row['Option_A']}", f"B) {row['Option_B']}", f"C) {row['Option_C']}", f"D) {row['Option_D']}"]
+            user_answers[index] = st.radio("Select answer:", opts, key=f"q_{module_id}_{index}", index=None)
+            st.write("---")
+        submit_btn = st.form_submit_button("Submit Quiz")
+
+    if submit_btn:
+        score = 0
+        st.subheader("📊 Results")
+        for index, row in module_questions.iterrows():
+            correct_display = f"{row['Correct_Answer'].replace('Option_', '')}) {row[row['Correct_Answer']]}"
+            sel = user_answers[index]
+            if sel == correct_display:
+                score += 1
+                st.success(f"**Q{row['Question_Number']}**: Correct! ✅")
+            else:
+                st.error(f"**Q{row['Question_Number']}**: Incorrect. ❌ (Correct: {correct_display})")
+            st.info(f"**Explanation:** {row['Answer_Explanation']}")
+            st.write("---")
+        st.metric("Score", f"{score} / {len(module_questions)}")
+
 def render_curriculum(current_role, current_tier):
     if curriculum_df.empty:
         st.warning("Curriculum data is currently unavailable.")
@@ -841,7 +954,6 @@ def render_curriculum(current_role, current_tier):
 
     st.write("---")
     resource_tabs = st.tabs(available_types)
-
     for idx, tab in enumerate(resource_tabs):
         with tab:
             row_data = topic_items.iloc[idx]
@@ -878,6 +990,8 @@ def render_curriculum(current_role, current_tier):
                 components.html(f'<iframe src="{embed_url}" width="100%" height="700" frameborder="0"></iframe>', height=700)
             else:
                 st.link_button(f"Open {res_type} in New Tab", res_url)
+                # Render the quiz at the bottom of the module view
+    render_module_quiz(quiz_bank_df, first_item['Topic'])
 
 def render_evaluation_tool():
     if not learner_dict:
