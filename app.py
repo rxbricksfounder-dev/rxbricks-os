@@ -91,6 +91,30 @@ PROGRAM_CONFIG = {
             "entrustment_scale": ["Calculation", "Brand/Generic", "Clinical Scenario"],
             "rotations": ["Foundations", "Ambulatory Care", "Acute Care", "Calculations"]
         }
+    },
+    "ABCGTBIO": {
+        "program_name": "ABCGTBIO",
+        "sheet_name": "03_MASTER_SHEET_ABCGTBIO",
+        "standards_tab": "ABCGTBIO_Standards",
+        "evaluation_column": "Course Module",
+        "learner_column": "Student Name",
+        "standards_column": "EPA Description",
+        "learner_id_column": "Learner_ID",
+        "env_type": "clinical",
+        "nomenclature": {
+            "learner": "Student",
+            "educator": "Faculty",
+            "director": "Course Coordinator",
+            "committee": "Curriculum Committee",
+            "committee_short": "CC",
+            "eval_system": "Evaluation",
+            "accreditation": "HYMR"
+        },
+        "eval_settings": {
+            "grading_scale": ["Exceeds Expectations", "Meets Expectations", "Needs Improvement", "Fail"],
+            "entrustment_scale": ["1 - Observe", "2 - Assist", "3 - Perform with Guidance", "4 - Perform Independently"],
+            "rotations": ["Ambulatory Care", "Acute Care", "Community", "Hospital"]
+        }
     }
 }
 # 1. SETTINGS & CONFIG
