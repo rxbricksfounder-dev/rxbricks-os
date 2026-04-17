@@ -1169,17 +1169,25 @@ def render_assignments(learner_id):
             assign_title = raw_title.split(':', 1)[-1].strip() if ':' in raw_title else raw_title
             
             # --- ROBUST LINK EXTRACTION ---
-            form_link = "https://docs.google.com/forms" # Default fallback
+            form_link = None # Default to None instead of a generic URL
             possible_link_cols = ['Form Link', 'Resource URL (Published)', 'URL', 'Link', 'Assignment Link', 'Resource Link']
             
             # Check multiple common column names to find the actual link
             for col in possible_link_cols:
-                if col in row.index and pd.notna(row[col]) and str(row[col]).strip() != "":
-                    form_link = str(row[col]).strip()
-                    break
+                if col in row.index and pd.notna(row[col]):
+                    val = str(row[col]).strip()
+                    # Ensure the cell isn't empty or reading as 'nan'
+                    if val.lower() not in ["", "nan", "none"]:
+                        form_link = val
+                        break
 
             with st.expander(f"📌 **{assign_title}**", expanded=False):
-                st.link_button("1️⃣ Open Assignment / Resource", form_link, type="primary")
+                # Conditionally render the button ONLY if a link actually exists
+                if form_link:
+                    st.link_button("1️⃣ Open Assignment / Resource", form_link, type="primary")
+                else:
+                    st.info("No external resource linked for this assignment.")
+                    
                 st.checkbox("2️⃣ Mark as Submitted / Complete", key=f"submit_{learner_id}_{raw_title}_{idx}")
                 
 # FIXED: Completed this previously hanging function
