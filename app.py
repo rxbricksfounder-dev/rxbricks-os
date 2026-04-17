@@ -1474,9 +1474,23 @@ if user_role == "admin":
             st.subheader(f"{nom['accreditation']} Progress Report Generator")
             
             clean_standards = ["Standard 3.1.c (Fallback Mode - CSV Not Loaded)"]
+            
             if not ashp_standards_df.empty:
-                valid_standards = ashp_standards_df[active_config['standards_column']].dropna().tolist()
-                clean_standards = [s for s in valid_standards if str(s).strip() != "" and ("Standard" in str(s) or str(s)[0].isdigit())]
+                std_col = active_config.get('standards_column')
+                
+                # SAFETY NET: Check if the configured column actually exists in the loaded sheet
+                if std_col and std_col in ashp_standards_df.columns:
+                    valid_standards = ashp_standards_df[std_col].dropna().tolist()
+                else:
+                    # Fallback: Just grab whatever is in the first column of the standards tab
+                    valid_standards = ashp_standards_df.iloc[:, 0].dropna().tolist()
+                
+                # FIXED: Removed the aggressive filter that required the word "Standard" or a digit
+                clean_standards = [s for s in valid_standards if str(s).strip() != ""]
+                
+                # If the fallback resulted in an empty list, provide a safe default
+                if not clean_standards:
+                     clean_standards = ["No valid standards found in column."]
                 
             st.write(f"🏛️ **1. Select Cited Standard**")
             selected_standard = st.selectbox(f"Select from {nom['accreditation']} framework:", options=clean_standards, key="ashp_std_dropdown")
