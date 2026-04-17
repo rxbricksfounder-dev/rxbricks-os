@@ -799,21 +799,25 @@ def render_resident_profile(learner_id, is_preceptor_view=False):
 def render_module_quiz(quiz_df, topic_name):
     if pd.isna(topic_name) or not topic_name or quiz_df.empty: return
     
-    # Sanitize the topic name for robust matching
-    safe_topic = str(topic_name).strip().lower()
+    # Strip spaces and underscores from the topic for a universal match
+    # Example: "1.1 Biological Drug Basics" -> "1.1biologicaldrugbasics"
+    safe_topic = str(topic_name).strip().lower().replace(" ", "").replace("_", "")
     
-    # Filter by Form_Name to find the quiz that matches this specific curriculum topic
-    mask = quiz_df['Form_Name'].astype(str).str.lower().str.contains(safe_topic, regex=False, na=False)
+    # Strip spaces and underscores from the Form Names column
+    # Example: "QUESTIONS_1.1_BIOLOGICAL_DRUG_BASICS" -> "questions1.1biologicaldrugbasics"
+    search_column = quiz_df['Form_Name'].astype(str).str.lower().str.replace(" ", "").str.replace("_", "")
+    
+    # Check if the sanitized topic exists inside the sanitized file name
+    mask = search_column.str.contains(safe_topic, regex=False, na=False)
     module_questions = quiz_df[mask]
 
-    # If no questions match the Form_Name, don't show the quiz UI
+    # If no match is found, silently skip rendering
     if module_questions.empty: return
 
     st.divider()
     st.subheader(f"📝 Knowledge Check")
     
-    # Create a safe session key to prevent overlapping states
-    safe_state_key = safe_topic.replace(" ", "_").replace(":", "")
+    safe_state_key = safe_topic.replace(":", "")
     if f"quiz_sub_{safe_state_key}" not in st.session_state:
         st.session_state[f"quiz_sub_{safe_state_key}"] = False
 
@@ -832,7 +836,6 @@ def render_module_quiz(quiz_df, topic_name):
         for index, row in module_questions.iterrows():
             correct_key = str(row['Correct_Answer']).strip()
             
-            # Safely format the correct answer display based on how Forms exported it
             if correct_key in ["Option_A", "Option_B", "Option_C", "Option_D"]:
                 correct_text = row[correct_key]
                 correct_display = f"{correct_key.replace('Option_', '')}) {correct_text}"
@@ -895,9 +898,11 @@ def render_curriculum(current_role, current_tier):
     ]
     
     if not available_types:
-        st.warning("No resources attached to this topic.")
+        st.warning("No multimedia resources attached to this topic.")
+        # Ensure the quiz still renders even if there are no videos/links
+        render_module_quiz(quiz_bank_df, first_item['Topic'])
         return
-
+        
     st.write("---")
     resource_tabs = st.tabs(available_types)
     for idx, tab in enumerate(resource_tabs):
