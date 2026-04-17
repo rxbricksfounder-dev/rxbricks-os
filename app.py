@@ -1710,10 +1710,8 @@ elif user_role == "learner":
             else:
                 st.warning("Schedule data unavailable.")
         
-        else:
-            # Optional: Show a message when the feature is turned off, or just remove this else block entirely.
-            st.info("📅 Shift scheduling is disabled for this module.")
-            
+        # The 'else' block that generated the alert has been completely removed from here.
+
         st.divider()
         render_step_counter(learner_id=logged_in_id, weekly_goal=5)
         st.divider()
