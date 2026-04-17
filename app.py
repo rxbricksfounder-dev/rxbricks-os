@@ -1167,12 +1167,21 @@ def render_assignments(learner_id):
             # Strip the prefix from the display title
             raw_title = str(row.get('Subject', 'Unknown Assignment'))
             assign_title = raw_title.split(':', 1)[-1].strip() if ':' in raw_title else raw_title
-            form_link = row.get('Form Link', "https://docs.google.com/forms")
+            
+            # --- ROBUST LINK EXTRACTION ---
+            form_link = "https://docs.google.com/forms" # Default fallback
+            possible_link_cols = ['Form Link', 'Resource URL (Published)', 'URL', 'Link', 'Assignment Link', 'Resource Link']
+            
+            # Check multiple common column names to find the actual link
+            for col in possible_link_cols:
+                if col in row.index and pd.notna(row[col]) and str(row[col]).strip() != "":
+                    form_link = str(row[col]).strip()
+                    break
 
             with st.expander(f"📌 **{assign_title}**", expanded=False):
                 st.link_button("1️⃣ Open Assignment / Resource", form_link, type="primary")
                 st.checkbox("2️⃣ Mark as Submitted / Complete", key=f"submit_{learner_id}_{raw_title}_{idx}")
-
+                
 # FIXED: Completed this previously hanging function
 def render_assignment_tracker():
     st.subheader("📋 Global Assignment Tracker")
