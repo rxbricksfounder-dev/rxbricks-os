@@ -1586,12 +1586,12 @@ elif user_role == "learner":
         render_daily_operations(logged_in_id, user_role)
         render_assignments(logged_in_id)
         
-        st.divider()
-        st.subheader("📅 My Dynamic Study Schedule")
+        # We removed the redundant "My Dynamic Study Schedule" header and table!
+        
+        # Keep ONLY the recalculation cascade engine in a clean expander
         if not schedule_df.empty: 
             sched_df = schedule_df.copy()
             
-            # FIX: Include the fallback logic here so it finds 'Candidate Name'
             learner_col = active_config.get("learner_id_column", "Learner_ID")
             if learner_col not in sched_df.columns:
                 learner_col = active_config.get("learner_column", "Resident Name")
@@ -1602,45 +1602,29 @@ elif user_role == "learner":
                         break
             
             if learner_col in sched_df.columns and 'Start Date' in sched_df.columns:
-                # FIX: Strip whitespace for guaranteed match
-                my_sched = sched_df[sched_df[learner_col].astype(str).str.strip() == str(logged_in_id).strip()].copy()
-                my_sched['Start Date'] = pd.to_datetime(my_sched['Start Date'], errors='coerce')
-                
-                today_date = pd.to_datetime('today').normalize()
-                future_sched = my_sched[my_sched['Start Date'].dt.normalize() >= today_date].sort_values(by='Start Date')
-                
-                if not future_sched.empty:
-                    future_sched['Start Date'] = future_sched['Start Date'].dt.strftime('%Y-%m-%d')
-                    display_cols = ['Subject', 'Start Date', 'Status', 'Priority_Tier', 'Estimated_Hours']
-                    display_cols = [c for c in display_cols if c in future_sched.columns]
-                    
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        st.dataframe(future_sched[display_cols], use_container_width=True, hide_index=True)
-                    
-                    with col2:
-                        st.info("💡 **Fell behind?**")
-                        if st.button("🚨 Mark Today Missed & Recalculate", use_container_width=True):
-                            with st.spinner("Cascading schedule..."):
-                                today_mask = (sched_df[learner_col] == logged_in_id) & (pd.to_datetime(sched_df['Start Date'], errors='coerce').dt.normalize() == today_date)
-                                sched_df.loc[today_mask, 'Status'] = 'Missed'
-                                
-                                exam_date = ""
-                                if not users_df.empty and 'Exam_Date' in users_df.columns: 
-                                    user_row = users_df[users_df['Username'] == st.session_state["username"]]
-                                    if not user_row.empty:
-                                        exam_date = user_row.iloc[0]['Exam_Date']
+                st.divider()
+                with st.expander("🛠️ Schedule Adjustments"):
+                    st.info("💡 **Fell behind?** Use this tool to mark today's tasks as missed and automatically cascade your remaining study schedule.")
+                    if st.button("🚨 Mark Today Missed & Recalculate", use_container_width=True):
+                        with st.spinner("Cascading schedule..."):
+                            today_date = pd.to_datetime('today').normalize()
+                            today_mask = (sched_df[learner_col] == logged_in_id) & (pd.to_datetime(sched_df['Start Date'], errors='coerce').dt.normalize() == today_date)
+                            sched_df.loc[today_mask, 'Status'] = 'Missed'
+                            
+                            exam_date = ""
+                            if not users_df.empty and 'Exam_Date' in users_df.columns: 
+                                user_row = users_df[users_df['Username'] == st.session_state["username"]]
+                                if not user_row.empty:
+                                    exam_date = user_row.iloc[0]['Exam_Date']
 
-                                new_sched, msg = recalculate_cascade(sched_df, learner_col, logged_in_id, exam_date)
-                                
-                                if "successfully" in msg:
-                                    save_schedule_to_sheet(active_sheet_name, new_sched)
-                                    st.success(msg)
-                                    st.rerun()
-                                else:
-                                    st.warning(msg)
-                else:
-                    st.info("No upcoming tasks scheduled.")
+                            new_sched, msg = recalculate_cascade(sched_df, learner_col, logged_in_id, exam_date)
+                            
+                            if "successfully" in msg:
+                                save_schedule_to_sheet(active_sheet_name, new_sched)
+                                st.success(msg)
+                                st.rerun()
+                            else:
+                                st.warning(msg)
             
     with tab2:
         render_curriculum(user_role, user_tier)
