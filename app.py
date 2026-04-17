@@ -714,82 +714,6 @@ def get_milestone_badges(learner_id):
         }
     return badges
 
-def render_module_quiz(quiz_df, module_id):
-    st.subheader(f"📝 Knowledge Check: {module_id}")
-    
-    # Filter the dataframe for only the current module's questions
-    module_questions = quiz_df[quiz_df['Module_ID'] == module_id]
-    
-    if module_questions.empty:
-        st.info("No quiz questions currently loaded for this module.")
-        return
-
-    # Initialize session state to track score and submission
-    if f"quiz_submitted_{module_id}" not in st.session_state:
-        st.session_state[f"quiz_submitted_{module_id}"] = False
-        st.session_state[f"quiz_score_{module_id}"] = 0
-
-    with st.form(key=f"quiz_form_{module_id}"):
-        user_answers = {}
-        
-        for index, row in module_questions.iterrows():
-            st.markdown(f"**Q{row['Question_Number']}: {row['Question_Text']}**")
-            
-            options = {
-                "Option_A": row['Option_A'],
-                "Option_B": row['Option_B'],
-                "Option_C": row['Option_C'],
-                "Option_D": row['Option_D']
-            }
-            
-            display_options = [f"A) {options['Option_A']}", 
-                               f"B) {options['Option_B']}", 
-                               f"C) {options['Option_C']}", 
-                               f"D) {options['Option_D']}"]
-            
-            user_answers[index] = st.radio(
-                "Select your answer:", 
-                display_options, 
-                key=f"q_{module_id}_{index}",
-                index=None 
-            )
-            st.write("---")
-            
-        submit_button = st.form_submit_button(label="Submit Quiz")
-
-    # --- EVALUATION LOGIC ---
-    if submit_button:
-        score = 0
-        total_questions = len(module_questions)
-        
-        st.subheader("📊 Quiz Results")
-        
-        for index, row in module_questions.iterrows():
-            correct_key = row['Correct_Answer'] 
-            
-            correct_display_text = ""
-            if correct_key == "Option_A": correct_display_text = f"A) {row['Option_A']}"
-            elif correct_key == "Option_B": correct_display_text = f"B) {row['Option_B']}"
-            elif correct_key == "Option_C": correct_display_text = f"C) {row['Option_C']}"
-            elif correct_key == "Option_D": correct_display_text = f"D) {row['Option_D']}"
-
-            user_selection = user_answers[index]
-
-            if user_selection == correct_display_text:
-                score += 1
-                st.success(f"**Q{row['Question_Number']}**: Correct! ✅")
-            else:
-                st.error(f"**Q{row['Question_Number']}**: Incorrect. ❌")
-                st.write(f"*You selected: {user_selection if user_selection else 'No answer'}*")
-                st.write(f"*Correct Answer: {correct_display_text}*")
-            
-            st.info(f"**Explanation:** {row['Answer_Explanation']}")
-            st.write("---")
-            
-        st.metric(label="Final Score", value=f"{score} / {total_questions}")
-        st.session_state[f"quiz_submitted_{module_id}"] = True
-        st.session_state[f"quiz_score_{module_id}"] = score
-
 def render_resident_profile(learner_id, is_preceptor_view=False):
     display_name = learner_dict.get(learner_id, learner_id)
     st.header(f"🎓 Professional Profile: {display_name}")
@@ -874,22 +798,31 @@ def render_resident_profile(learner_id, is_preceptor_view=False):
 # =========================================================
 def render_module_quiz(quiz_df, topic_name):
     if pd.isna(topic_name) or not topic_name or quiz_df.empty: return
-    prefix = str(topic_name).split(" ")[0]
-    module_id = f"MOD_{prefix}"
-    module_questions = quiz_df[quiz_df['Module_ID'] == module_id]
+    
+    # Sanitize the topic name for robust matching
+    safe_topic = str(topic_name).strip().lower()
+    
+    # Filter by Form_Name to find the quiz that matches this specific curriculum topic
+    mask = quiz_df['Form_Name'].astype(str).str.lower().str.contains(safe_topic, regex=False, na=False)
+    module_questions = quiz_df[mask]
+
+    # If no questions match the Form_Name, don't show the quiz UI
     if module_questions.empty: return
 
     st.divider()
     st.subheader(f"📝 Knowledge Check")
-    if f"quiz_sub_{module_id}" not in st.session_state:
-        st.session_state[f"quiz_sub_{module_id}"] = False
+    
+    # Create a safe session key to prevent overlapping states
+    safe_state_key = safe_topic.replace(" ", "_").replace(":", "")
+    if f"quiz_sub_{safe_state_key}" not in st.session_state:
+        st.session_state[f"quiz_sub_{safe_state_key}"] = False
 
-    with st.form(key=f"quiz_{module_id}"):
+    with st.form(key=f"quiz_{safe_state_key}"):
         user_answers = {}
         for index, row in module_questions.iterrows():
             st.markdown(f"**Q{row['Question_Number']}: {row['Question_Text']}**")
             opts = [f"A) {row['Option_A']}", f"B) {row['Option_B']}", f"C) {row['Option_C']}", f"D) {row['Option_D']}"]
-            user_answers[index] = st.radio("Select answer:", opts, key=f"q_{module_id}_{index}", index=None)
+            user_answers[index] = st.radio("Select answer:", opts, key=f"q_{safe_state_key}_{index}", index=None)
             st.write("---")
         submit_btn = st.form_submit_button("Submit Quiz")
 
@@ -897,17 +830,28 @@ def render_module_quiz(quiz_df, topic_name):
         score = 0
         st.subheader("📊 Results")
         for index, row in module_questions.iterrows():
-            correct_display = f"{row['Correct_Answer'].replace('Option_', '')}) {row[row['Correct_Answer']]}"
+            correct_key = str(row['Correct_Answer']).strip()
+            
+            # Safely format the correct answer display based on how Forms exported it
+            if correct_key in ["Option_A", "Option_B", "Option_C", "Option_D"]:
+                correct_text = row[correct_key]
+                correct_display = f"{correct_key.replace('Option_', '')}) {correct_text}"
+            else:
+                correct_display = correct_key
+                
             sel = user_answers[index]
-            if sel == correct_display:
+            
+            if sel and (sel == correct_display or correct_key in str(sel)):
                 score += 1
                 st.success(f"**Q{row['Question_Number']}**: Correct! ✅")
             else:
-                st.error(f"**Q{row['Question_Number']}**: Incorrect. ❌ (Correct: {correct_display})")
+                st.error(f"**Q{row['Question_Number']}**: Incorrect. ❌")
+                st.write(f"*Correct Answer: {correct_display}*")
+                
             st.info(f"**Explanation:** {row['Answer_Explanation']}")
             st.write("---")
         st.metric("Score", f"{score} / {len(module_questions)}")
-
+        
 def render_curriculum(current_role, current_tier):
     if curriculum_df.empty:
         st.warning("Curriculum data is currently unavailable.")
