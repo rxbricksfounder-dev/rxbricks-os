@@ -258,7 +258,7 @@ def load_all_data(sheet_name, standards_tab_name):
             return pd.DataFrame()
 
     curr = fetch_sheet("1_Curriculum")
-    resp = fetch_sheet("Form Responses 1") 
+    resp = pd.DataFrame()
     sched = fetch_sheet("4_Schedule")
     user_db = fetch_sheet("3_Users")
     assign_df = fetch_sheet("5_Assignments")
@@ -1085,14 +1085,26 @@ def render_evaluation_tool():
 def get_todays_schedule(target_id=None):
     if schedule_df.empty: return pd.DataFrame()
     
-    date_col = 'Start Date' if 'Start Date' in schedule_df.columns else 'Date'
-    if date_col not in schedule_df.columns: return pd.DataFrame()
+    start_col = 'Start Date' if 'Start Date' in schedule_df.columns else 'Date'
+    if start_col not in schedule_df.columns: return pd.DataFrame()
         
     try:
-        # FIX: Normalize both dates so they mathematically match perfectly
         today_date = pd.to_datetime('today').normalize()
-        sched_dates = pd.to_datetime(schedule_df[date_col], errors='coerce').dt.normalize()
-        today_sched = schedule_df[sched_dates == today_date].copy()
+        start_dates = pd.to_datetime(schedule_df[start_col], errors='coerce').dt.normalize()
+        
+        # FUNDAMENTAL FIX: Handle date ranges by checking the End Date
+        if 'End Date' in schedule_df.columns:
+            end_dates = pd.to_datetime(schedule_df['End Date'], errors='coerce').dt.normalize()
+            # If a row has a Start Date but no End Date, make the End Date the same as Start Date
+            end_dates = end_dates.fillna(start_dates)
+            
+            # Keep rows where today is greater than/equal to Start, AND less than/equal to End
+            mask_date = (start_dates <= today_date) & (end_dates >= today_date)
+        else:
+            # Fallback to strict match if the End Date column doesn't exist
+            mask_date = (start_dates == today_date)
+            
+        today_sched = schedule_df[mask_date].copy()
     except Exception:
         return pd.DataFrame()
     
@@ -1101,25 +1113,24 @@ def get_todays_schedule(target_id=None):
         if id_col not in schedule_df.columns:
             id_col = active_config.get("learner_column", "Resident Name")
             
+        # Expanded fallback list to catch your CSV headers
         if id_col not in schedule_df.columns:
-            # Added 'Assigned To' to the fallback array
             for fallback in ["Assigned To", "Candidate Name", "Resident", "Resident Name", "Student Name", "Student", "Name", "Learner"]:
                 if fallback in schedule_df.columns:
                     id_col = fallback
                     break
                     
         if id_col in schedule_df.columns:
-            # FIX: Handle "All" logic and make matching case-insensitive
-            mask = (
+            # Handle "All" logic and strip whitespace to guarantee user matches
+            mask_user = (
                 (today_sched[id_col].astype(str).str.strip().str.lower() == str(target_id).strip().lower()) |
                 (today_sched[id_col].astype(str).str.strip().str.lower() == 'all')
             )
-            today_sched = today_sched[mask]
+            today_sched = today_sched[mask_user]
         else:
             return pd.DataFrame()
             
-    return today_sched
-    
+    return today_sched    
 def render_daily_operations(learner_id, role):
     env_type = active_config.get("env_type", "clinical")
     st.markdown("## Daily Operations Command Center")
