@@ -1102,19 +1102,24 @@ def get_todays_schedule(target_id=None):
             id_col = active_config.get("learner_column", "Resident Name")
             
         if id_col not in schedule_df.columns:
-            for fallback in ["Candidate Name", "Resident", "Resident Name", "Student Name", "Student", "Name", "Learner"]:
+            # Added 'Assigned To' to the fallback array
+            for fallback in ["Assigned To", "Candidate Name", "Resident", "Resident Name", "Student Name", "Student", "Name", "Learner"]:
                 if fallback in schedule_df.columns:
                     id_col = fallback
                     break
                     
         if id_col in schedule_df.columns:
-            # FIX: Strip trailing spaces to guarantee a match
-            today_sched = today_sched[today_sched[id_col].astype(str).str.strip() == str(target_id).strip()]
+            # FIX: Handle "All" logic and make matching case-insensitive
+            mask = (
+                (today_sched[id_col].astype(str).str.strip().str.lower() == str(target_id).strip().lower()) |
+                (today_sched[id_col].astype(str).str.strip().str.lower() == 'all')
+            )
+            today_sched = today_sched[mask]
         else:
             return pd.DataFrame()
             
     return today_sched
-
+    
 def render_daily_operations(learner_id, role):
     env_type = active_config.get("env_type", "clinical")
     st.markdown("## Daily Operations Command Center")
