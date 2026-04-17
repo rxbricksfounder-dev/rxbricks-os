@@ -77,6 +77,7 @@ PROGRAM_CONFIG = {
         "standards_column": "Competency Statement",
         "learner_id_column": "Learner_ID",
         "env_type": "academic", # NEW: AI Context flag
+        "show_upcoming_schedule": False,
         "nomenclature": {
             "learner": "Candidate",
             "educator": "Academic Coach",
@@ -101,6 +102,7 @@ PROGRAM_CONFIG = {
         "standards_column": "EPA Description",
         "learner_id_column": "Learner_ID",
         "env_type": "clinical",
+        "show_upcoming_schedule": False,
         "nomenclature": {
             "learner": "Learner",
             "educator": "Faculty",
@@ -1644,67 +1646,74 @@ elif user_role == "learner":
         render_curriculum(user_role, user_tier)
         
     with tab3:     
-        if not schedule_df.empty:
-            id_col = active_config.get("learner_id_column", "Learner_ID")
+        # --- FEATURE FLAG CHECK ---
+        if active_config.get("show_upcoming_schedule", True):
             
-            if id_col not in schedule_df.columns:
-                id_col = active_config.get("learner_column", "Resident Name")
+            if not schedule_df.empty:
+                id_col = active_config.get("learner_id_column", "Learner_ID")
                 
-            # THE SAFETY NET
-            if id_col not in schedule_df.columns:
-                possible_fallbacks = ["Candidate Name", "Resident", "Resident Name", "Student Name", "Student", "Name", "Learner"]
-                for fallback in possible_fallbacks:
-                    if fallback in schedule_df.columns:
-                        id_col = fallback
-                        break
-                        
+                if id_col not in schedule_df.columns:
+                    id_col = active_config.get("learner_column", "Resident Name")
+                    
+                # THE SAFETY NET
+                if id_col not in schedule_df.columns:
+                    possible_fallbacks = ["Candidate Name", "Resident", "Resident Name", "Student Name", "Student", "Name", "Learner"]
+                    for fallback in possible_fallbacks:
+                        if fallback in schedule_df.columns:
+                            id_col = fallback
+                            break
+                            
             # --- DYNAMIC UPCOMING SCHEDULE ---
-        env_type = active_config.get("env_type", "clinical")
-        sched_header = "📅 Upcoming Study Schedule" if env_type == "academic" else "📅 Upcoming Shifts"
-        st.subheader(sched_header)
+            env_type = active_config.get("env_type", "clinical")
+            sched_header = "📅 Upcoming Study Schedule" if env_type == "academic" else "📅 Upcoming Shifts"
+            st.subheader(sched_header)
 
-        if not schedule_df.empty:
-            # Safe learner ID mapping
-            id_col = active_config.get("learner_id_column", "Learner_ID")
-            if id_col not in schedule_df.columns:
-                id_col = active_config.get("learner_column", "Resident Name")
+            if not schedule_df.empty:
+                # Safe learner ID mapping
+                id_col = active_config.get("learner_id_column", "Learner_ID")
+                if id_col not in schedule_df.columns:
+                    id_col = active_config.get("learner_column", "Resident Name")
 
-            if id_col not in schedule_df.columns:
-                possible_fallbacks = ["Candidate Name", "Resident", "Resident Name", "Student Name", "Student", "Name", "Learner"]
-                for fallback in possible_fallbacks:
-                    if fallback in schedule_df.columns:
-                        id_col = fallback
-                        break
+                if id_col not in schedule_df.columns:
+                    possible_fallbacks = ["Candidate Name", "Resident", "Resident Name", "Student Name", "Student", "Name", "Learner"]
+                    for fallback in possible_fallbacks:
+                        if fallback in schedule_df.columns:
+                            id_col = fallback
+                            break
 
-            if id_col in schedule_df.columns:
-                my_sched_all = schedule_df[schedule_df[id_col].astype(str).str.strip() == str(logged_in_id).strip()].copy()
-                date_col = 'Start Date' if 'Start Date' in schedule_df.columns else 'Date'
+                if id_col in schedule_df.columns:
+                    my_sched_all = schedule_df[schedule_df[id_col].astype(str).str.strip() == str(logged_in_id).strip()].copy()
+                    date_col = 'Start Date' if 'Start Date' in schedule_df.columns else 'Date'
 
-                if not my_sched_all.empty and date_col in my_sched_all.columns:
-                    try:
-                        # Robust date parsing (ignores bad text safely)
-                        my_sched_all[date_col] = pd.to_datetime(my_sched_all[date_col], errors='coerce')
-                        my_sched_all = my_sched_all.dropna(subset=[date_col])
+                    if not my_sched_all.empty and date_col in my_sched_all.columns:
+                        try:
+                            # Robust date parsing (ignores bad text safely)
+                            my_sched_all[date_col] = pd.to_datetime(my_sched_all[date_col], errors='coerce')
+                            my_sched_all = my_sched_all.dropna(subset=[date_col])
 
-                        today_date = pd.to_datetime('today').normalize()
-                        future_sched = my_sched_all[my_sched_all[date_col] >= today_date].sort_values(by=date_col)
+                            today_date = pd.to_datetime('today').normalize()
+                            future_sched = my_sched_all[my_sched_all[date_col] >= today_date].sort_values(by=date_col)
 
-                        if not future_sched.empty:
-                            future_sched[date_col] = future_sched[date_col].dt.strftime('%Y-%m-%d')
-                            display_cols = ['Subject', date_col]
-                            if 'Start Time' in future_sched.columns: display_cols.append('Start Time')
-                            st.table(future_sched[display_cols])
-                        else:
-                            st.info("No upcoming sessions scheduled. Enjoy the downtime!")
-                    except Exception as e:
-                        st.warning(f"Schedule dates could not be parsed. Error: {e}")
+                            if not future_sched.empty:
+                                future_sched[date_col] = future_sched[date_col].dt.strftime('%Y-%m-%d')
+                                display_cols = ['Subject', date_col]
+                                if 'Start Time' in future_sched.columns: display_cols.append('Start Time')
+                                st.table(future_sched[display_cols])
+                            else:
+                                st.info("No upcoming sessions scheduled. Enjoy the downtime!")
+                        except Exception as e:
+                            st.warning(f"Schedule dates could not be parsed. Error: {e}")
+                    else:
+                        st.info("No upcoming schedule data found for your user.")
                 else:
-                    st.info("No upcoming schedule data found for your user.")
+                    st.warning("⚠️ Schedule Error: Could not find a matching student name column.")
             else:
-                st.warning("⚠️ Schedule Error: Could not find a matching student name column.")
-        else:
-            st.warning("Schedule data unavailable.")
+                st.warning("Schedule data unavailable.")
         
+        else:
+            # Optional: Show a message when the feature is turned off, or just remove this else block entirely.
+            st.info("📅 Shift scheduling is disabled for this module.")
+            
         st.divider()
         render_step_counter(learner_id=logged_in_id, weekly_goal=5)
         st.divider()
