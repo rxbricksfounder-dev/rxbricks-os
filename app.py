@@ -1344,9 +1344,16 @@ def render_rpd_command_center(active_config, live_eval_df, weekly_goal=5):
 if user_role == "admin":        
     nom = active_config["nomenclature"]
     st.title(f"📈 {nom['director']} Dashboard")
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📊 Reports & Progress", "👨‍🏫 Submit Evaluation", "📅 Daily Operations", "📋 Assignment Tracker", "🎓 Academic Records", "📝 Admin & Accreditation"])
     
+    # WE SWAPPED THE FIRST TWO TABS HERE
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["👨‍🏫 Submit Evaluation", "📊 Reports & Progress", "📅 Daily Operations", "📋 Assignment Tracker", "🎓 Academic Records", "📝 Admin & Accreditation"])
+    
+    # TAB 1 IS NOW THE VOICE SCRIBE
     with tab1:
+        render_evaluation_tool()
+
+    # TAB 2 IS NOW THE DASHBOARD REPORTS
+    with tab2:
         st.subheader(f"🌐 {nom['director'].split(' ')[0]} Command Center: Program Overview")
         
         # 1. Fetch the data FIRST
@@ -1435,9 +1442,6 @@ if user_role == "admin":
                 st.download_button(label="📥 Export Data (CSV)", data=csv_export, file_name=f"eval_report_{datetime.today().strftime('%Y-%m-%d')}.csv", mime='text/csv', type="primary")
             
             st.dataframe(res_data, use_container_width=True, hide_index=True)
-                
-    with tab2:
-        render_evaluation_tool()
        
     with tab3:
         st.subheader("📅 Today's Active Residents")
