@@ -1897,6 +1897,3 @@ elif user_role == "learner":
                 st.dataframe(recent_10, use_container_width=True, hide_index=True)
             else:
                 st.info("No evaluations on record.")
-
-    with tab4:
-        render_resident_profile(logged_in_id, is_preceptor_view=False)
