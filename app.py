@@ -1751,9 +1751,6 @@ elif user_role == "learner":
         render_daily_operations(logged_in_id, user_role)
         render_assignments(logged_in_id)
         
-        # We removed the redundant "My Dynamic Study Schedule" header and table!
-        
-        # Keep ONLY the recalculation cascade engine in a clean expander
         if not schedule_df.empty: 
             sched_df = schedule_df.copy()
             
