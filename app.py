@@ -973,33 +973,37 @@ def render_learner_voice_journal(resident_id, active_config, eval_set):
     st.subheader("🎙️ Clinical Voice Journal")
     st.markdown("""
     **Self-Reflection & Objective Mapping**
-    Dictate a clinical scenario you just handled. Describe your thought process, interventions, and patient outcomes. The AI will map your actions to your rotation objectives.
+    Dictate a clinical scenario, topic review, or case presentation. Describe your thought process and interventions. The AI will map your actions to your rotation objectives.
     """)
     st.write("---")
 
-    # Dropdowns for the resident to select their current rotation and target objective
+    # 1. NEW: ROTATION, OBJECTIVE, AND INTERACTION TYPE
     col1, col2 = st.columns(2)
     with col1:
-        # Pulls the active rotations from your config
         selected_rotation = st.selectbox("Current Rotation", active_config.get("rotations", ["CORE - 1 - EM"]), key="self_rot") 
     with col2:
-        # Pulls the objectives from your config
         selected_action = st.selectbox("Target Objective", active_config.get("evaluations", ["R1.1.1 Interact effectively with health care teams"]), key="self_obj")
+
+    interaction_type = st.selectbox(
+        "Type of Interaction", 
+        [
+            "Clinical Scenario / Bedside Care", 
+            "Topic Discussion / Review", 
+            "Case Presentation", 
+            "Journal Club / Literature Review", 
+            "Project / Admin Review"
+        ],
+        key="self_interaction_type"
+    )
 
     text_key = f"self_dictation_text_{resident_id}"
     if text_key not in st.session_state:
         st.session_state[text_key] = ""
 
-    # 1. AUDIO CAPTURE ROW
+    # 2. AUDIO CAPTURE ROW
     col_mic, col_trans = st.columns([1, 4])
     with col_mic:
-        audio_bytes = audio_recorder(
-            text="Record Scenario", 
-            recording_color="#e81e6d", 
-            neutral_color="#6aa36f", 
-            key=f"self_rec_{resident_id}",
-            pause_threshold=300.0  # Prevents early cutoffs during pauses
-        )
+        audio_bytes = audio_recorder(text="Record Scenario", recording_color="#e81e6d", neutral_color="#6aa36f", key=f"self_rec_{resident_id}", pause_threshold=300.0)
     
     with col_trans:
         if audio_bytes:
@@ -1012,24 +1016,22 @@ def render_learner_voice_journal(resident_id, active_config, eval_set):
                         st.success("Transcription complete!")
                         st.rerun()
 
-    # 2. TEXT AREA (Auto-Synced)
+    # 3. TEXT AREA
     st.markdown("**Review & Edit Your Scenario**")
-    st.text_area(
-        "Hidden Label", 
-        height=150, 
-        key=text_key,
-        label_visibility="collapsed"
-    )
+    st.text_area("Hidden Label", height=150, key=text_key, label_visibility="collapsed")
 
-    # 3. AI MAPPING ENGINE
+    # 4. AI MAPPING ENGINE
     if st.button("✨ Map My Scenario to Objectives", type="primary", use_container_width=True, key="self_map_btn"):
         if len(st.session_state[text_key]) < 5:
             st.warning("Please record your scenario first!")
         else:
-            with st.spinner("AI Coach is analyzing your clinical actions..."):
-                # We pass the resident ID as both the user and the target, and set zone to "Self-Evaluation"
+            with st.spinner(f"AI Coach is analyzing this {interaction_type.split('/')[0]}..."):
+                
+                # Context Enrichment for the Learner
+                enriched_dictation = f"[Interaction Type: {interaction_type}]\n\n{st.session_state[text_key]}"
+                
                 ai_result = generate_ai_evaluation(
-                    st.session_state[text_key], 
+                    enriched_dictation, 
                     resident_id, 
                     selected_rotation, 
                     selected_action, 
@@ -1039,7 +1041,7 @@ def render_learner_voice_journal(resident_id, active_config, eval_set):
                 if ai_result:
                     st.session_state.self_eval_draft = ai_result
 
-    # 4. DISPLAY AND SAVE TO DATABASE
+    # 5. DISPLAY AND SAVE TO DATABASE
     if "self_eval_draft" in st.session_state and st.session_state.self_eval_draft:
         draft = st.session_state.self_eval_draft
         st.divider()
@@ -1052,11 +1054,11 @@ def render_learner_voice_journal(resident_id, active_config, eval_set):
         if st.button("💾 Submit to Preceptor / Log to Database", type="primary", key="self_save_btn"):
             with st.spinner("Saving self-evaluation..."):
                 success = log_evaluation_to_sheet(
-                    preceptor="SELF-REFLECTION", # Hardcoded so it stands out in your database
+                    preceptor="SELF-REFLECTION", 
                     resident=resident_id,  
                     rotation=selected_rotation,
                     objective=selected_action,
-                    criteria="Clinical Scenario",
+                    criteria=interaction_type, # <--- SAVES THE SPECIFIC INTERACTION TYPE
                     grade="Self-Assessed", 
                     comment="Submitted via Voice Journal",
                     action_plan=action_plan,
@@ -1106,28 +1108,32 @@ def render_evaluation_tool():
         zone_action = st.selectbox("Target Entrustment", eval_set.get("entrustment_scale", ["1", "2", "3", "4"]), key=f"zone_{target_res_id}")
         
 # --- NEW VOICE-TO-PHARMACADEMIC ENGINE ---
+    # --- UPGRADED VOICE-TO-PHARMACADEMIC ENGINE ---
     st.write("---")
     st.subheader("🎙️ Voice-to-PharmAcademic Scribe")
-    st.caption("Record your clinical discussion. AI will transcribe it, or you can type manually below.")
+    st.caption("Record your clinical discussion, topic review, or case presentation.")
 
-    # We use a single, unified key for both the transcription variable AND the text area widget
+    # 1. NEW: INTERACTION TYPE SELECTOR
+    interaction_type = st.selectbox(
+        "Type of Interaction", 
+        [
+            "Clinical Scenario / Bedside Care", 
+            "Topic Discussion / Review", 
+            "Case Presentation", 
+            "Journal Club / Literature Review", 
+            "Project / Admin Review"
+        ],
+        key=f"interaction_type_{target_res_id}"
+    )
+
     text_key = f"dictation_text_{target_res_id}"
-    
-    # Initialize it so Streamlit doesn't throw an error on the first load
     if text_key not in st.session_state:
         st.session_state[text_key] = ""
 
-    # 1. AUDIO RECORDING ROW
+    # 2. AUDIO RECORDING ROW
     col_mic, col_trans = st.columns([1, 4])
     with col_mic:
-        # Added pause_threshold=300.0 to disable auto-cutoff during natural speaking pauses
-        audio_bytes = audio_recorder(
-            text="Click to Record", 
-            recording_color="#e81e6d", 
-            neutral_color="#6aa36f", 
-            key=f"recorder_{target_res_id}",
-            pause_threshold=300.0  # <--- THIS IS THE FIX
-        )
+        audio_bytes = audio_recorder(text="Click to Record", recording_color="#e81e6d", neutral_color="#6aa36f", key=f"recorder_{target_res_id}", pause_threshold=300.0)
     
     with col_trans:
         if audio_bytes:
@@ -1136,30 +1142,26 @@ def render_evaluation_tool():
                 with st.spinner("Transcribing clinical audio..."):
                     transcript = transcribe_clinical_audio(audio_bytes)
                     if transcript:
-                        # We inject the transcript directly into the text area's state key
                         st.session_state[text_key] = transcript
                         st.success("Transcription complete!")
                         st.rerun()
 
-    # 2. TEXT AREA (Always Visible & Auto-Synced)
+    # 3. TEXT AREA (Auto-Synced)
     st.markdown("**Review & Edit Dictation** (or type manually)")
-    
-    # Because we assign 'key=text_key', Streamlit automatically handles showing the text and saving manual edits!
-    st.text_area(
-        "Hidden Label", 
-        height=150, 
-        key=text_key, 
-        label_visibility="collapsed"
-    )
+    st.text_area("Hidden Label", height=150, key=text_key, label_visibility="collapsed")
 
-    # 3. AI MAPPING & GRADING ENGINE
+    # 4. AI MAPPING & GRADING ENGINE
     if st.button("✨ Assess Quality & Map to PharmAcademic", type="primary", use_container_width=True, key=f"draft_btn_{target_res_id}"):
         if len(st.session_state[text_key]) < 5:
             st.warning("Please dictate or type notes before generating the evaluation!")
         else:
-            with st.spinner("AI Coach is analyzing and mapping to objectives..."):
+            with st.spinner(f"AI Coach is analyzing this {interaction_type.split('/')[0]}..."):
+                
+                # Context Enrichment: We tell the AI what kind of interaction this was!
+                enriched_dictation = f"[Interaction Type: {interaction_type}]\n\n{st.session_state[text_key]}"
+                
                 ai_result = generate_ai_evaluation(
-                    st.session_state[text_key], # Referencing our new unified key
+                    enriched_dictation, # Passing the enriched text
                     learner_dict.get(target_res_id, target_res_id), 
                     selected_rotation, 
                     selected_action, 
@@ -1169,20 +1171,20 @@ def render_evaluation_tool():
                 if ai_result:
                     st.session_state.eval_draft = ai_result
 
-    # --- YOUR EXISTING DISPLAY & SAVE LOGIC STAYS HERE ---
-    if st.session_state.eval_draft:
+    # 5. DISPLAY & SAVE LOGIC
+    if "eval_draft" in st.session_state and st.session_state.eval_draft:
         draft = st.session_state.eval_draft
         st.divider()
         
         q_grade = draft.get("QualityGrade", "Green")
         if q_grade == "Red":
-            st.error(f"🔴 **AI {nom['educator']} Coach (Deficient Entry):** {draft.get('QualityFeedback')}")
+            st.error(f"🔴 **AI Coach (Deficient Entry):** {draft.get('QualityFeedback')}")
         elif q_grade == "Yellow":
-            st.warning(f"🟡 **AI {nom['educator']} Coach (Borderline Entry):** {draft.get('QualityFeedback')}")
+            st.warning(f"🟡 **AI Coach (Borderline Entry):** {draft.get('QualityFeedback')}")
         else:
-            st.success(f"✅ **AI {nom['educator']} Coach (Robust Entry):** {draft.get('QualityFeedback')}")
+            st.success(f"✅ **AI Coach (Robust Entry):** {draft.get('QualityFeedback')}")
 
-        st.subheader(f"📋 {nom['eval_system']} Draft")
+        st.subheader(f"📋 PharmAcademic Draft")
         col_c, col_d = st.columns([1, 3])
         with col_c:
             safe_grade = draft.get("Grade", eval_set["grading_scale"][2] if len(eval_set["grading_scale"]) > 2 else "Pass")
@@ -1201,16 +1203,16 @@ def render_evaluation_tool():
                     resident=target_res_id,  
                     rotation=selected_rotation,
                     objective=selected_action,
-                    criteria="Clinical Scenario",
+                    criteria=interaction_type, # <--- SAVES THE SPECIFIC INTERACTION TYPE TO YOUR DATABASE
                     grade=final_grade,
                     comment=final_comment,
                     action_plan=final_action,
-                    narrative=st.session_state[text_key], # Updated to the new key here as well!
+                    narrative=st.session_state[text_key],
                     ai_quality_grade=q_grade,
                     pharmacademic_text=final_narrative
                 )
                 if success:
-                    st.success(f"🎉 Safely logged to Database! Ready for {nom['eval_system']} export.")
+                    st.success("🎉 Safely logged to Database! Ready for export.")
                     st.session_state.eval_draft = None
                     
 def get_todays_schedule(target_id=None):
