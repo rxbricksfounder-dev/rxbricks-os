@@ -967,6 +967,108 @@ def render_curriculum(current_role, current_tier):
                 # Render the quiz at the bottom of the module view
     render_module_quiz(quiz_bank_df, first_item['Topic'])
 
+def render_learner_voice_journal(resident_id, active_config, eval_set):
+    """A dedicated Voice-to-PharmAcademic tool for Resident Self-Reflection."""
+    
+    st.subheader("🎙️ Clinical Voice Journal")
+    st.markdown("""
+    **Self-Reflection & Objective Mapping**
+    Dictate a clinical scenario you just handled. Describe your thought process, interventions, and patient outcomes. The AI will map your actions to your rotation objectives.
+    """)
+    st.write("---")
+
+    # Dropdowns for the resident to select their current rotation and target objective
+    col1, col2 = st.columns(2)
+    with col1:
+        # Pulls the active rotations from your config
+        selected_rotation = st.selectbox("Current Rotation", active_config.get("rotations", ["CORE - 1 - EM"]), key="self_rot") 
+    with col2:
+        # Pulls the objectives from your config
+        selected_action = st.selectbox("Target Objective", active_config.get("evaluations", ["R1.1.1 Interact effectively with health care teams"]), key="self_obj")
+
+    text_key = f"self_dictation_text_{resident_id}"
+    if text_key not in st.session_state:
+        st.session_state[text_key] = ""
+
+    # 1. AUDIO CAPTURE ROW
+    col_mic, col_trans = st.columns([1, 4])
+    with col_mic:
+        audio_bytes = audio_recorder(
+            text="Record Scenario", 
+            recording_color="#e81e6d", 
+            neutral_color="#6aa36f", 
+            key=f"self_rec_{resident_id}",
+            pause_threshold=300.0  # Prevents early cutoffs during pauses
+        )
+    
+    with col_trans:
+        if audio_bytes:
+            st.audio(audio_bytes, format="audio/wav")
+            if st.button("📝 Transcribe My Audio", type="secondary", key="self_transcribe_btn"):
+                with st.spinner("Transcribing..."):
+                    transcript = transcribe_clinical_audio(audio_bytes)
+                    if transcript:
+                        st.session_state[text_key] = transcript
+                        st.success("Transcription complete!")
+                        st.rerun()
+
+    # 2. TEXT AREA (Auto-Synced)
+    st.markdown("**Review & Edit Your Scenario**")
+    st.text_area(
+        "Hidden Label", 
+        height=150, 
+        key=text_key,
+        label_visibility="collapsed"
+    )
+
+    # 3. AI MAPPING ENGINE
+    if st.button("✨ Map My Scenario to Objectives", type="primary", use_container_width=True, key="self_map_btn"):
+        if len(st.session_state[text_key]) < 5:
+            st.warning("Please record your scenario first!")
+        else:
+            with st.spinner("AI Coach is analyzing your clinical actions..."):
+                # We pass the resident ID as both the user and the target, and set zone to "Self-Evaluation"
+                ai_result = generate_ai_evaluation(
+                    st.session_state[text_key], 
+                    resident_id, 
+                    selected_rotation, 
+                    selected_action, 
+                    "Self-Evaluation", 
+                    active_config
+                )
+                if ai_result:
+                    st.session_state.self_eval_draft = ai_result
+
+    # 4. DISPLAY AND SAVE TO DATABASE
+    if "self_eval_draft" in st.session_state and st.session_state.self_eval_draft:
+        draft = st.session_state.self_eval_draft
+        st.divider()
+        st.success("✅ Scenario Mapped Successfully!")
+        
+        st.subheader("PharmAcademic Self-Evaluation Draft")
+        final_narrative = st.text_area("AI-Generated PharmAcademic Narrative", value=draft.get("Narrative", ""), height=150, key="self_narrative")
+        action_plan = st.text_area("Your Action Plan for Next Time", value=draft.get("ActionPlan", ""), height=80, key="self_action")
+        
+        if st.button("💾 Submit to Preceptor / Log to Database", type="primary", key="self_save_btn"):
+            with st.spinner("Saving self-evaluation..."):
+                success = log_evaluation_to_sheet(
+                    preceptor="SELF-REFLECTION", # Hardcoded so it stands out in your database
+                    resident=resident_id,  
+                    rotation=selected_rotation,
+                    objective=selected_action,
+                    criteria="Clinical Scenario",
+                    grade="Self-Assessed", 
+                    comment="Submitted via Voice Journal",
+                    action_plan=action_plan,
+                    narrative=st.session_state[text_key], 
+                    ai_quality_grade="Green",
+                    pharmacademic_text=final_narrative
+                )
+                if success:
+                    st.success("🎉 Scenario safely logged! Your preceptor can now review it.")
+                    st.session_state.self_eval_draft = None
+
+
 def render_evaluation_tool():
     if not learner_dict:
         st.warning("No learners found in the system.")
