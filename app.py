@@ -1744,10 +1744,13 @@ elif user_role == "learner":
     render_step_tracker(logged_in_id)
     st.write("---")
     
-    tab1, tab2, tab3, tab4 = st.tabs(["🎯 Today's Plan", "📚 Curriculum Library", "📅 Schedule & Progress", "🎓 Profile & CV"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎙️ Clinical Voice Journal", "🎯 Today's Plan", "📚 Curriculum Library", "📅 Schedule & Progress", "🎓 Profile & CV"])
     
     with tab1:
-        render_learner_voice_journal(logged_in_user, active_config, active_config.get("evaluation_settings", {}))
+        # FIXED: Changed logged_in_user to logged_in_id so the app doesn't crash!
+        render_learner_voice_journal(logged_in_id, active_config, active_config.get("eval_settings", {}))
+        
+    with tab2:
         render_daily_operations(logged_in_id, user_role)
         render_assignments(logged_in_id)
         
@@ -1788,10 +1791,10 @@ elif user_role == "learner":
                             else:
                                 st.warning(msg)
             
-    with tab2:
+    with tab3:
         render_curriculum(user_role, user_tier)
         
-    with tab3:     
+    with tab4:     
         # --- FEATURE FLAG CHECK ---
         if active_config.get("show_upcoming_schedule", True):
             
@@ -1855,6 +1858,26 @@ elif user_role == "learner":
                     st.warning("⚠️ Schedule Error: Could not find a matching student name column.")
             else:
                 st.warning("Schedule data unavailable.")
+        
+        st.divider()
+        render_step_counter(learner_id=logged_in_id, weekly_goal=5)
+        st.divider()
+        
+        st.subheader("📈 My 10 Most Recent Evaluations")
+        live_eval_df = get_evaluation_log(active_sheet_name) 
+        if not live_eval_df.empty:
+            my_evals = get_learner_evals(live_eval_df, active_config, logged_in_id)
+            if not my_evals.empty:
+                my_evals['Timestamp'] = pd.to_datetime(my_evals['Timestamp'], errors='coerce')
+                recent_10 = my_evals.sort_values(by='Timestamp', ascending=False).head(10)
+                recent_10['Timestamp'] = recent_10['Timestamp'].dt.strftime('%Y-%m-%d %H:%M')
+                st.metric("Total Lifetime Evaluations Logged", len(my_evals))
+                st.dataframe(recent_10, use_container_width=True, hide_index=True)
+            else:
+                st.info("No evaluations on record.")
+
+    with tab5:
+        render_resident_profile(logged_in_id, is_preceptor_view=False)
         
         # The 'else' block that generated the alert has been completely removed from here.
 
