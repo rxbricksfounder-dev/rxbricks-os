@@ -6,3 +6,4 @@ requests
 gspread
 google-auth
 google-generativeai
+audio-recorder-streamlit
