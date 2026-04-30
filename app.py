@@ -1018,8 +1018,14 @@ def render_evaluation_tool():
     # 1. AUDIO RECORDING ROW
     col_mic, col_trans = st.columns([1, 4])
     with col_mic:
-        # Added a unique key to the audio recorder to prevent glitches across multiple learners
-        audio_bytes = audio_recorder(text="Click to Record", recording_color="#e81e6d", neutral_color="#6aa36f", key=f"recorder_{target_res_id}")
+        # Added pause_threshold=300.0 to disable auto-cutoff during natural speaking pauses
+        audio_bytes = audio_recorder(
+            text="Click to Record", 
+            recording_color="#e81e6d", 
+            neutral_color="#6aa36f", 
+            key=f"recorder_{target_res_id}",
+            pause_threshold=300.0  # <--- THIS IS THE FIX
+        )
     
     with col_trans:
         if audio_bytes:
