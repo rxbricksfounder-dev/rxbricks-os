@@ -1747,7 +1747,7 @@ elif user_role == "learner":
     tab1, tab2, tab3, tab4 = st.tabs(["🎯 Today's Plan", "📚 Curriculum Library", "📅 Schedule & Progress", "🎓 Profile & CV"])
     
     with tab1:
-       render_learner_voice_journal(logged_in_user, active_config, active_config.get("evaluation_settings", {}))
+        render_learner_voice_journal(logged_in_user, active_config, active_config.get("evaluation_settings", {}))
         render_daily_operations(logged_in_id, user_role)
         render_assignments(logged_in_id)
         
