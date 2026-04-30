@@ -1008,14 +1008,18 @@ def render_evaluation_tool():
     st.subheader("🎙️ Voice-to-PharmAcademic Scribe")
     st.caption("Record your clinical discussion. AI will transcribe it, or you can type manually below.")
 
-    state_key = f"dictation_{target_res_id}"
-    if state_key not in st.session_state:
-        st.session_state[state_key] = ""
+    # We use a single, unified key for both the transcription variable AND the text area widget
+    text_key = f"dictation_text_{target_res_id}"
+    
+    # Initialize it so Streamlit doesn't throw an error on the first load
+    if text_key not in st.session_state:
+        st.session_state[text_key] = ""
 
     # 1. AUDIO RECORDING ROW
     col_mic, col_trans = st.columns([1, 4])
     with col_mic:
-        audio_bytes = audio_recorder(text="Click to Record", recording_color="#e81e6d", neutral_color="#6aa36f")
+        # Added a unique key to the audio recorder to prevent glitches across multiple learners
+        audio_bytes = audio_recorder(text="Click to Record", recording_color="#e81e6d", neutral_color="#6aa36f", key=f"recorder_{target_res_id}")
     
     with col_trans:
         if audio_bytes:
@@ -1024,31 +1028,30 @@ def render_evaluation_tool():
                 with st.spinner("Transcribing clinical audio..."):
                     transcript = transcribe_clinical_audio(audio_bytes)
                     if transcript:
-                        st.session_state[state_key] = transcript
+                        # We inject the transcript directly into the text area's state key
+                        st.session_state[text_key] = transcript
                         st.success("Transcription complete!")
                         st.rerun()
 
-    # 2. TEXT AREA (Always Visible)
+    # 2. TEXT AREA (Always Visible & Auto-Synced)
     st.markdown("**Review & Edit Dictation** (or type manually)")
-    raw_dictation = st.text_area(
-        "Hidden Label", # Label is hidden in favor of the markdown above
-        value=st.session_state[state_key], 
+    
+    # Because we assign 'key=text_key', Streamlit automatically handles showing the text and saving manual edits!
+    st.text_area(
+        "Hidden Label", 
         height=150, 
-        key=f"text_input_{target_res_id}",
+        key=text_key, 
         label_visibility="collapsed"
     )
-    # Sync manual edits back to session state
-    if raw_dictation != st.session_state[state_key]:
-        st.session_state[state_key] = raw_dictation
 
     # 3. AI MAPPING & GRADING ENGINE
     if st.button("✨ Assess Quality & Map to PharmAcademic", type="primary", use_container_width=True, key=f"draft_btn_{target_res_id}"):
-        if len(st.session_state[state_key]) < 5:
+        if len(st.session_state[text_key]) < 5:
             st.warning("Please dictate or type notes before generating the evaluation!")
         else:
             with st.spinner("AI Coach is analyzing and mapping to objectives..."):
                 ai_result = generate_ai_evaluation(
-                    st.session_state[state_key], 
+                    st.session_state[text_key], # Referencing our new unified key
                     learner_dict.get(target_res_id, target_res_id), 
                     selected_rotation, 
                     selected_action, 
@@ -1057,7 +1060,8 @@ def render_evaluation_tool():
                 )
                 if ai_result:
                     st.session_state.eval_draft = ai_result
-        
+
+    # --- YOUR EXISTING DISPLAY & SAVE LOGIC STAYS HERE ---
     if st.session_state.eval_draft:
         draft = st.session_state.eval_draft
         st.divider()
@@ -1093,7 +1097,7 @@ def render_evaluation_tool():
                     grade=final_grade,
                     comment=final_comment,
                     action_plan=final_action,
-                    narrative=raw_dictation_1, 
+                    narrative=st.session_state[text_key], # Updated to the new key here as well!
                     ai_quality_grade=q_grade,
                     pharmacademic_text=final_narrative
                 )
