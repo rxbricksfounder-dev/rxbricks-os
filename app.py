@@ -1003,45 +1003,45 @@ def render_evaluation_tool():
     with col_b:
         zone_action = st.selectbox("Target Entrustment", eval_set.get("entrustment_scale", ["1", "2", "3", "4"]), key=f"zone_{target_res_id}")
         
+# --- NEW VOICE-TO-PHARMACADEMIC ENGINE ---
     st.write("---")
     st.subheader("🎙️ Voice-to-PharmAcademic Scribe")
-    st.caption("Record your clinical discussion or evaluation. AI will transcribe and map it to the selected objective.")
+    st.caption("Record your clinical discussion. AI will transcribe it, or you can type manually below.")
 
-    # State management for the transcribed text
     state_key = f"dictation_{target_res_id}"
     if state_key not in st.session_state:
         st.session_state[state_key] = ""
 
-    tab_voice, tab_text = st.tabs(["🎤 Voice Record", "⌨️ Manual Entry"])
+    # 1. AUDIO RECORDING ROW
+    col_mic, col_trans = st.columns([1, 4])
+    with col_mic:
+        audio_bytes = audio_recorder(text="Click to Record", recording_color="#e81e6d", neutral_color="#6aa36f")
     
-    with tab_voice:
-        col_mic, col_trans = st.columns([1, 4])
-        with col_mic:
-            audio_bytes = audio_recorder(text="Click to Record", recording_color="#e81e6d", neutral_color="#6aa36f")
-        
-        with col_trans:
-            if audio_bytes:
-                st.audio(audio_bytes, format="audio/wav")
-                if st.button("📝 Transcribe Audio", type="secondary", key=f"trans_{target_res_id}"):
-                    with st.spinner("Transcribing clinical audio..."):
-                        transcript = transcribe_clinical_audio(audio_bytes)
-                        if transcript:
-                            st.session_state[state_key] = transcript
-                            st.success("Transcription complete!")
-                            st.rerun()
+    with col_trans:
+        if audio_bytes:
+            st.audio(audio_bytes, format="audio/wav")
+            if st.button("📝 Transcribe Audio", type="secondary", key=f"trans_{target_res_id}"):
+                with st.spinner("Transcribing clinical audio..."):
+                    transcript = transcribe_clinical_audio(audio_bytes)
+                    if transcript:
+                        st.session_state[state_key] = transcript
+                        st.success("Transcription complete!")
+                        st.rerun()
 
-    with tab_text:
-        # Link the text area to the session state so voice transcriptions auto-populate here
-        raw_dictation = st.text_area(
-            f"Review & Edit Dictation", 
-            value=st.session_state[state_key], 
-            height=150, 
-            key=f"text_input_{target_res_id}"
-        )
-        # Update state if the user manually types or edits the transcription
-        if raw_dictation != st.session_state[state_key]:
-            st.session_state[state_key] = raw_dictation
+    # 2. TEXT AREA (Always Visible)
+    st.markdown("**Review & Edit Dictation** (or type manually)")
+    raw_dictation = st.text_area(
+        "Hidden Label", # Label is hidden in favor of the markdown above
+        value=st.session_state[state_key], 
+        height=150, 
+        key=f"text_input_{target_res_id}",
+        label_visibility="collapsed"
+    )
+    # Sync manual edits back to session state
+    if raw_dictation != st.session_state[state_key]:
+        st.session_state[state_key] = raw_dictation
 
+    # 3. AI MAPPING & GRADING ENGINE
     if st.button("✨ Assess Quality & Map to PharmAcademic", type="primary", use_container_width=True, key=f"draft_btn_{target_res_id}"):
         if len(st.session_state[state_key]) < 5:
             st.warning("Please dictate or type notes before generating the evaluation!")
