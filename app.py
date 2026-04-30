@@ -9,6 +9,7 @@ import streamlit.components.v1 as components
 import google.generativeai as genai
 from datetime import datetime
 from google.oauth2.service_account import Credentials
+from audio_recorder_streamlit import audio_recorder
 
 # ==========================================\
 # 0. MULTI-TENANT PROGRAM CONFIGURATION
@@ -521,6 +522,28 @@ def run_gap_analysis(standard_name, evaluation_data_subset, config):
     except Exception as e:
         return f"Error running AI Audit: {str(e)}"
 
+def transcribe_clinical_audio(audio_bytes):
+    """Passes raw audio bytes to Gemini for clinical transcription."""
+    model = get_gemini_model()
+    if not model: return None
+    
+    prompt = """
+    You are an expert medical transcriptionist and clinical pharmacist. 
+    Transcribe the following clinical dictation accurately. 
+    Ensure all medical terminology, drug names, and dosages are spelled correctly.
+    Return ONLY the transcribed text. Do not include markdown or conversational filler.
+    """
+    try:
+        # Gemini natively accepts multimodal byte data
+        response = model.generate_content([
+            prompt,
+            {"mime_type": "audio/wav", "data": audio_bytes}
+        ])
+        return response.text
+    except Exception as e:
+        st.error(f"Audio Transcription Error: {str(e)}")
+        return None
+
 # =========================================================
 # 4. AUTHENTICATION & ROUTING FIX
 # =========================================================
@@ -976,20 +999,65 @@ def render_evaluation_tool():
         
         selected_rotation = st.selectbox("Module / Rotation", eval_set.get("rotations", ["Default"]), key=f"rot_{target_res_id}")
         selected_action = st.selectbox(target_label, topics, key=f"act_{target_res_id}")
+        
     with col_b:
         zone_action = st.selectbox("Target Entrustment", eval_set.get("entrustment_scale", ["1", "2", "3", "4"]), key=f"zone_{target_res_id}")
         
-    raw_dictation_1 = st.text_area(f"{nom['educator']} Dictation / Rough Notes (Be honest!)", height=100, key=f"dict_{target_res_id}")
+    st.write("---")
+    st.subheader("🎙️ Voice-to-PharmAcademic Scribe")
+    st.caption("Record your clinical discussion or evaluation. AI will transcribe and map it to the selected objective.")
+
+    # State management for the transcribed text
+    state_key = f"dictation_{target_res_id}"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = ""
+
+    tab_voice, tab_text = st.tabs(["🎤 Voice Record", "⌨️ Manual Entry"])
     
-    if st.button("✨ Assess Quality & Draft Evaluation", type="primary", use_container_width=True, key=f"draft_btn_{target_res_id}"):
-        if len(raw_dictation_1) < 5:
-            st.warning("Please dictate a few words first!")
+    with tab_voice:
+        col_mic, col_trans = st.columns([1, 4])
+        with col_mic:
+            audio_bytes = audio_recorder(text="Click to Record", recording_color="#e81e6d", neutral_color="#6aa36f")
+        
+        with col_trans:
+            if audio_bytes:
+                st.audio(audio_bytes, format="audio/wav")
+                if st.button("📝 Transcribe Audio", type="secondary", key=f"trans_{target_res_id}"):
+                    with st.spinner("Transcribing clinical audio..."):
+                        transcript = transcribe_clinical_audio(audio_bytes)
+                        if transcript:
+                            st.session_state[state_key] = transcript
+                            st.success("Transcription complete!")
+                            st.rerun()
+
+    with tab_text:
+        # Link the text area to the session state so voice transcriptions auto-populate here
+        raw_dictation = st.text_area(
+            f"Review & Edit Dictation", 
+            value=st.session_state[state_key], 
+            height=150, 
+            key=f"text_input_{target_res_id}"
+        )
+        # Update state if the user manually types or edits the transcription
+        if raw_dictation != st.session_state[state_key]:
+            st.session_state[state_key] = raw_dictation
+
+    if st.button("✨ Assess Quality & Map to PharmAcademic", type="primary", use_container_width=True, key=f"draft_btn_{target_res_id}"):
+        if len(st.session_state[state_key]) < 5:
+            st.warning("Please dictate or type notes before generating the evaluation!")
         else:
-            with st.spinner("AI Coach is analyzing and drafting..."):
-                ai_result = generate_ai_evaluation(raw_dictation_1, learner_dict.get(target_res_id, target_res_id), selected_rotation, selected_action, zone_action, active_config)
+            with st.spinner("AI Coach is analyzing and mapping to objectives..."):
+                ai_result = generate_ai_evaluation(
+                    st.session_state[state_key], 
+                    learner_dict.get(target_res_id, target_res_id), 
+                    selected_rotation, 
+                    selected_action, 
+                    zone_action, 
+                    active_config
+                )
                 if ai_result:
                     st.session_state.eval_draft = ai_result
-
+        
     if st.session_state.eval_draft:
         draft = st.session_state.eval_draft
         st.divider()
