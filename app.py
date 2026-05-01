@@ -1,5 +1,6 @@
 import zlib
 import json
+import re
 import bcrypt
 import pandas as pd
 import streamlit as st
@@ -397,7 +398,7 @@ def render_progress(col_target, items, working_df, eval_col):
 # ==========================================\
 # 2. AI ENGINES
 # ==========================================\
-def generate_ai_evaluation(raw_dictation, learner_name, rotation, topic, zone, config):
+def generate_ai_evaluation(raw_dictation, learner_name, rotation, topic, zone, config, proven_bricks=None):
     model = get_gemini_model()
     if not model: return None
     
@@ -410,6 +411,13 @@ def generate_ai_evaluation(raw_dictation, learner_name, rotation, topic, zone, c
     else:
         role_context = f"an expert Clinical Preceptor evaluating direct patient care and clinical autonomy."
     
+    # NEW: Inject the deterministic evidence
+    evidence_text = "No specific clinical signals detected by the system."
+    if proven_bricks:
+        evidence_text = "DETERMINISTIC EVIDENCE FOUND BY SYSTEM AUDIT:\n"
+        for brick in proven_bricks:
+            evidence_text += f"- Objective: {brick.get('ASHP_Objective', 'N/A')} | Evidence Used: {brick['Matched_Evidence']}\n"
+    
     prompt = f"""
     You are {role_context}.
     First, evaluate the quality of the raw {nom['educator'].lower()} dictation. Then, format it into a highly professional evaluation.
@@ -420,6 +428,8 @@ def generate_ai_evaluation(raw_dictation, learner_name, rotation, topic, zone, c
     * Target {config['evaluation_column'].split(' ')[-1]}: {topic}
     * Focus Area: {zone}
     
+    {evidence_text}
+    
     Raw {nom['educator']} Dictation:
     {raw_dictation}
     
@@ -428,9 +438,9 @@ def generate_ai_evaluation(raw_dictation, learner_name, rotation, topic, zone, c
     1. "QualityGrade": String ("Green", "Yellow", or "Red"). Red means the dictation was lazy or lacked appropriate context.
     2. "QualityFeedback": String (1 short sentence of direct coaching to the {nom['educator'].lower()} explaining *why* their dictation scored that grade).
     3. "Grade": Must be one of: {', '.join(config['eval_settings']['grading_scale'])}.
-    4. "Comment": A 1-2 sentence professional assessment.
+    4. "Comment": A 1-2 sentence professional assessment. Ground this comment in the DETERMINISTIC EVIDENCE FOUND if any is provided.
     5. "ActionPlan": 1-2 sentences detailing specific next steps.
-    6. "Narrative": A comprehensive synthesis paragraph ready for {eval_sys}.
+    6. "Narrative": A comprehensive synthesis paragraph ready for {eval_sys}. Incorporate the deterministic evidence into this narrative.
     """
         
     try:
@@ -543,6 +553,45 @@ def transcribe_clinical_audio(audio_bytes):
     except Exception as e:
         st.error(f"Audio Transcription Error: {str(e)}")
         return None
+
+class RxBricksScribeMatcher:
+    def __init__(self, knowledge_df):
+        """Initializes using the live Google Sheets DataFrame"""
+        self.knowledge_base = knowledge_df
+
+    def _parse_signals(self, signal_string):
+        import pandas as pd
+        if pd.isna(signal_string): return []
+        clean_str = str(signal_string).replace('[', '').replace(']', '').replace("'", "").replace('"', '')
+        signals = clean_str.split(';') if ';' in clean_str else clean_str.split(',')
+        return [s.strip().lower() for s in signals if s.strip()]
+
+    def analyze_transcript(self, transcript_text):
+        transcript_clean = transcript_text.lower()
+        captured_bricks = []
+
+        # Fail gracefully if column isn't mapped yet
+        if 'Scribe_Signals' not in self.knowledge_base.columns:
+            return [] 
+
+        for index, row in self.knowledge_base.iterrows():
+            signals = self._parse_signals(row['Scribe_Signals'])
+            matched_phrases = []
+
+            for signal in signals:
+                # Use regex word boundaries (\b) to match whole phrases
+                pattern = r'\b' + re.escape(signal) + r'\b'
+                if re.search(pattern, transcript_clean):
+                    matched_phrases.append(signal)
+
+            if matched_phrases:
+                captured_bricks.append({
+                    "Activity": row.get('Actionable_Activity', 'Unknown'),
+                    "ASHP_Objective": row.get('ASHP_Objective', 'Unknown'),
+                    "Miller_Level": row.get('Miller_Level', 'Unknown'),
+                    "Matched_Evidence": matched_phrases
+                })
+        return captured_bricks
 
 # =========================================================
 # 4. AUTHENTICATION & ROUTING FIX
@@ -1157,16 +1206,27 @@ def render_evaluation_tool():
         else:
             with st.spinner(f"AI Coach is analyzing this {interaction_type.split('/')[0]}..."):
                 
-                # Context Enrichment: We tell the AI what kind of interaction this was!
+                # 1. NEW: Run the Deterministic Matcher first!
+                # We pass curriculum_df because that is where the Scribe_Signals column lives
+                matcher = RxBricksScribeMatcher(curriculum_df) 
+                proven_bricks = matcher.analyze_transcript(st.session_state[text_key])
+                
+                if proven_bricks:
+                    st.toast(f"✅ Found {len(proven_bricks)} exact clinical signals from the rubric!")
+                else:
+                    st.toast("⚠️ No exact clinical signals matched the rubric.")
+
+                # 2. Pass the transcript AND the proven bricks to Gemini
                 enriched_dictation = f"[Interaction Type: {interaction_type}]\n\n{st.session_state[text_key]}"
                 
                 ai_result = generate_ai_evaluation(
-                    enriched_dictation, # Passing the enriched text
-                    learner_dict.get(target_res_id, target_res_id), 
-                    selected_rotation, 
-                    selected_action, 
-                    zone_action, 
-                    active_config
+                    raw_dictation=enriched_dictation, 
+                    learner_name=learner_dict.get(target_res_id, target_res_id), 
+                    rotation=selected_rotation, 
+                    topic=selected_action, 
+                    zone=zone_action, 
+                    config=active_config,
+                    proven_bricks=proven_bricks # <--- Injecting the hard proof here
                 )
                 if ai_result:
                     st.session_state.eval_draft = ai_result
