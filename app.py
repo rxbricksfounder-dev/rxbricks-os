@@ -475,15 +475,15 @@ def generate_ce_micro_lesson(raw_dictation, mission_dict):
     satisfy the following daily mission and programmatic standards:
     - Topic: {mission_dict.get('topic')}
     - SPECIFIC DAILY MISSION: "{mission_dict.get('actionable_prompt')}"
-    - Required Accreditation Standard: {mission_dict.get('standard')}
+    - REQUIRED KEYWORDS/SIGNALS: {mission_dict.get('signals')}
     
     Raw Case Dictation from the Learner:
     {raw_dictation}
     
     Output Requirements:
     Return ONLY a strict JSON object with exactly these 4 keys:
-    1. "StandardMet": Boolean (True ONLY if their dictation clearly proves they accomplished the SPECIFIC DAILY MISSION. False otherwise).
-    2. "Feedback": String (If True, validate how their action met the specific mission. If False, provide direct coaching on what clinical reasoning was missing to fulfill the mission).
+    1. "StandardMet": Boolean (True ONLY if their dictation clearly proves they accomplished the SPECIFIC DAILY MISSION and utilized concepts related to the REQUIRED KEYWORDS/SIGNALS. False otherwise).
+    2. "Feedback": String (If True, validate how their action met the mission. If False, provide direct coaching on what clinical reasoning or specific keywords were missing to fulfill the mission).
     3. "LearningPearls": Array of 3 Strings (Provide high-yield clinical pearls specifically related to the intersection of their case and the Topic).
     4. "CEQuestions": Array of 2 Objects (Generate 2 multiple-choice questions to test their knowledge. Format: "Question", "Options" (array of 4), "CorrectAnswer", and "Explanation").
     """
@@ -1473,7 +1473,7 @@ def get_todays_schedule(target_id=None):
     return today_sched
 
 def get_daily_ce_mission(learner_id):
-    """Dynamically builds a mission using the specific Actionable_Activity from the merged curriculum."""
+    """Dynamically builds a mission using the specific Actionable_Activity and Scribe_Signals."""
     today_sched = get_todays_schedule(learner_id)
     
     if today_sched.empty:
@@ -1489,7 +1489,8 @@ def get_daily_ce_mission(learner_id):
         "standard": "General Clinical Application",
         "actionable_prompt": f"Identify a relevant therapy related to {target_subject} and discuss its clinical application.",
         "target_level": "Shows How",
-        "domain": "Application"
+        "domain": "Application",
+        "signals": "No specific keywords required." # <-- NEW LINE
     }
     
     if not curriculum_df.empty:
@@ -1501,9 +1502,10 @@ def get_daily_ce_mission(learner_id):
             epa = row.get('EPA', '')
             miller_level = row.get('Competence Level (Miller)', '')
             bloom_domain = row.get('Cognitive Domain', '')
-            
-            # THE UPGRADE: Grab the specific actionable mission we merged in Phase 1
             action_activity = row.get('Actionable_Activity', '')
+            
+            # THE UPGRADE: Grab the specific scribe signals we merged via SQL
+            scribe_signals = row.get('Scribe_Signals', '')
             
             core_standard = ashp_obj if pd.notna(ashp_obj) and str(ashp_obj).strip() != "" else epa
             
@@ -1513,12 +1515,14 @@ def get_daily_ce_mission(learner_id):
                 mission_data["target_level"] = miller_level
             if pd.notna(bloom_domain) and str(bloom_domain).strip() != "":
                 mission_data["domain"] = bloom_domain
-            # If the merge was successful, apply the specific rubric prompt
             if pd.notna(action_activity) and str(action_activity).strip() != "":
                 mission_data["actionable_prompt"] = str(action_activity).strip()
                 
-    return mission_data
-    
+            # If the merge found signals, add them to the mission data
+            if pd.notna(scribe_signals) and str(scribe_signals).strip() != "":
+                mission_data["signals"] = str(scribe_signals).strip()
+                
+    return mission_data    
 def render_daily_operations(learner_id, role):
     env_type = active_config.get("env_type", "clinical")
     st.markdown("## Daily Operations Command Center")
