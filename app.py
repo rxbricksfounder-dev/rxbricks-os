@@ -270,6 +270,17 @@ def load_all_data(sheet_name, standards_tab_name):
     ashp_df = fetch_sheet(standards_tab_name)
     quiz_df = fetch_sheet("Quiz_Bank")
     
+    # --- NEW: AUTOMATED SQL-STYLE "JOIN" ---
+    rubric_df = fetch_sheet("Master_Rubric")
+    
+    if not curr.empty and not rubric_df.empty and 'Module_ID' in curr.columns and 'Module_ID' in rubric_df.columns:
+        # We only want to pull the specific actionable columns we need from the Rubric
+        rubric_subset = rubric_df[['Module_ID', 'Actionable_Activity', 'Scribe_Signals']]
+        
+        # This merges the Actionable_Activity and Scribe_Signals into the Curriculum dataframe automatically!
+        curr = pd.merge(curr, rubric_subset, on='Module_ID', how='left')
+    # ---------------------------------------
+
     dataframes = [curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df, quiz_df] 
 
     for df in dataframes:
@@ -283,7 +294,7 @@ def load_all_data(sheet_name, standards_tab_name):
         if 'End Date' in sched.columns:
             sched['End Date'] = pd.to_datetime(sched['End Date'], errors='coerce')
     
-    return curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df, quiz_df # <-- ADD quiz_df
+    return curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df, quiz_df
     
     sched['Start Date'] = pd.to_datetime(sched['Start Date'], errors='coerce')
     if 'End Date' in sched.columns:
@@ -419,28 +430,23 @@ def generate_ai_evaluation(raw_dictation, learner_name, rotation, topic, zone, c
             evidence_text += f"- Objective: {brick.get('ASHP_Objective', 'N/A')} | Evidence Used: {brick['Matched_Evidence']}\n"
     
     prompt = f"""
-    You are {role_context}.
-    First, evaluate the quality of the raw {nom['educator'].lower()} dictation. Then, format it into a highly professional evaluation.
+    You are an expert Clinical Pharmacist Preceptor acting as an evaluator for a Continuing Education (CE) module.
     
-    Context:
-    * {nom['learner']}: {learner_name}
-    * Module/Rotation: {rotation}
-    * Target {config['evaluation_column'].split(' ')[-1]}: {topic}
-    * Focus Area: {zone}
+    The learner encountered a patient case today. You must rigorously evaluate if their dictated clinical actions 
+    satisfy the following daily mission and programmatic standards:
+    - Topic: {mission_dict.get('topic')}
+    - SPECIFIC DAILY MISSION: "{mission_dict.get('actionable_prompt')}"
+    - Required Accreditation Standard: {mission_dict.get('standard')}
     
-    {evidence_text}
-    
-    Raw {nom['educator']} Dictation:
+    Raw Case Dictation from the Learner:
     {raw_dictation}
     
     Output Requirements:
-    Return ONLY a strict JSON object with exactly these 6 keys:
-    1. "QualityGrade": String ("Green", "Yellow", or "Red"). Red means the dictation was lazy or lacked appropriate context.
-    2. "QualityFeedback": String (1 short sentence of direct coaching to the {nom['educator'].lower()} explaining *why* their dictation scored that grade).
-    3. "Grade": Must be one of: {', '.join(config['eval_settings']['grading_scale'])}.
-    4. "Comment": A 1-2 sentence professional assessment. Ground this comment in the DETERMINISTIC EVIDENCE FOUND if any is provided.
-    5. "ActionPlan": 1-2 sentences detailing specific next steps.
-    6. "Narrative": A comprehensive synthesis paragraph ready for {eval_sys}. Incorporate the deterministic evidence into this narrative.
+    Return ONLY a strict JSON object with exactly these 4 keys:
+    1. "StandardMet": Boolean (True ONLY if their dictation clearly proves they accomplished the SPECIFIC DAILY MISSION. False otherwise).
+    2. "Feedback": String (If True, validate how their action met the specific mission. If False, provide direct coaching on what clinical reasoning was missing to fulfill the mission).
+    3. "LearningPearls": Array of 3 Strings (Provide high-yield clinical pearls specifically related to the intersection of their case and the Topic).
+    4. "CEQuestions": Array of 2 Objects (Generate 2 multiple-choice questions to test their knowledge. Format: "Question", "Options" (array of 4), "CorrectAnswer", and "Explanation").
     """
         
     try:
@@ -1463,7 +1469,7 @@ def get_todays_schedule(target_id=None):
     return today_sched
 
 def get_daily_ce_mission(learner_id):
-    """Dynamically builds a mission using the specific Actionable_Activity from the curriculum."""
+    """Dynamically builds a mission using the specific Actionable_Activity from the merged curriculum."""
     today_sched = get_todays_schedule(learner_id)
     
     if today_sched.empty:
@@ -1473,7 +1479,7 @@ def get_daily_ce_mission(learner_id):
     if not target_subject:
         return None
         
-    # Default fallback if the spreadsheet is missing data
+    # Default fallback baseline
     mission_data = {
         "topic": target_subject,
         "standard": "General Clinical Application",
@@ -1482,7 +1488,6 @@ def get_daily_ce_mission(learner_id):
         "domain": "Application"
     }
     
-    # Extract the exact accreditation standards and Actionable Activity from the Curriculum DataFrame
     if not curriculum_df.empty:
         match = curriculum_df[curriculum_df['Topic'] == target_subject]
         if not match.empty:
@@ -1493,10 +1498,9 @@ def get_daily_ce_mission(learner_id):
             miller_level = row.get('Competence Level (Miller)', '')
             bloom_domain = row.get('Cognitive Domain', '')
             
-            # THE UPGRADE: Grab the specific actionable mission
+            # THE UPGRADE: Grab the specific actionable mission we merged in Phase 1
             action_activity = row.get('Actionable_Activity', '')
             
-            # Prioritize ASHP Objective, fallback to EPA
             core_standard = ashp_obj if pd.notna(ashp_obj) and str(ashp_obj).strip() != "" else epa
             
             if pd.notna(core_standard) and str(core_standard).strip() != "":
@@ -1505,11 +1509,12 @@ def get_daily_ce_mission(learner_id):
                 mission_data["target_level"] = miller_level
             if pd.notna(bloom_domain) and str(bloom_domain).strip() != "":
                 mission_data["domain"] = bloom_domain
+            # If the merge was successful, apply the specific rubric prompt
             if pd.notna(action_activity) and str(action_activity).strip() != "":
                 mission_data["actionable_prompt"] = str(action_activity).strip()
                 
     return mission_data
-
+    
 def render_daily_operations(learner_id, role):
     env_type = active_config.get("env_type", "clinical")
     st.markdown("## Daily Operations Command Center")
