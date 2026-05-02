@@ -461,19 +461,19 @@ def generate_ce_micro_lesson(raw_dictation, mission_dict):
     prompt = f"""
     You are an expert Clinical Pharmacist Preceptor acting as an evaluator for a Continuing Education (CE) module.
     
-    The learner encountered a patient case today. You must evaluate if their actions 
-    satisfy the following programmatic standards:
+    The learner encountered a patient case today. You must rigorously evaluate if their dictated clinical actions 
+    satisfy the following daily mission and programmatic standards:
     - Topic: {mission_dict.get('topic')}
-    - Required Objective/Standard: {mission_dict.get('standard')}
-    - Target Competency Level (Miller's Pyramid): {mission_dict.get('target_level', 'Action')}
+    - SPECIFIC DAILY MISSION: "{mission_dict.get('actionable_prompt')}"
+    - Required Accreditation Standard: {mission_dict.get('standard')}
     
     Raw Case Dictation from the Learner:
     {raw_dictation}
     
     Output Requirements:
     Return ONLY a strict JSON object with exactly these 4 keys:
-    1. "StandardMet": Boolean (True if their dictation proves they performed the Required Objective at the Target Competency Level, False otherwise).
-    2. "Feedback": String (If True, validate how their action met the specific standard. If False, provide direct coaching on what clinical reasoning was missing to meet the standard).
+    1. "StandardMet": Boolean (True ONLY if their dictation clearly proves they accomplished the SPECIFIC DAILY MISSION. False otherwise).
+    2. "Feedback": String (If True, validate how their action met the specific mission. If False, provide direct coaching on what clinical reasoning was missing to fulfill the mission).
     3. "LearningPearls": Array of 3 Strings (Provide high-yield clinical pearls specifically related to the intersection of their case and the Topic).
     4. "CEQuestions": Array of 2 Objects (Generate 2 multiple-choice questions to test their knowledge. Format: "Question", "Options" (array of 4), "CorrectAnswer", and "Explanation").
     """
@@ -970,17 +970,22 @@ def render_ce_case_logger(learner_id):
     if mission:
         st.markdown(f"""
         <div style="padding: 15px; border-left: 5px solid #e81e6d; background-color: #f9f9f9; border-radius: 5px; margin-bottom: 20px;">
-            <h4 style="margin-top: 0px; color: #e81e6d;">🎯 Today's Focus: {mission['topic']}</h4>
-            <p style="margin-bottom: 5px; font-size: 16px;"><strong>Program Objective:</strong> {mission['standard']}</p>
-            <p style="margin-bottom: 0px; font-size: 14px; color: #555;">
-                <i>Target Competency: {mission['target_level']} | Domain: {mission['domain']}</i>
+            <h4 style="margin-top: 0px; color: #e81e6d;">🎯 Today's Mission: {mission['topic']}</h4>
+            <p style="margin-bottom: 5px; font-size: 18px; color: #333;"><strong>Your Goal:</strong> <i>{mission['actionable_prompt']}</i></p>
+            <p style="margin-bottom: 0px; font-size: 14px; color: #666;">
+                Standard: {mission['standard']} | Target Competency: {mission['target_level']}
             </p>
         </div>
         """, unsafe_allow_html=True)
         active_mission = mission
     else:
         st.info("No specific rotation scheduled. You may log an ad-hoc clinical encounter below.")
-        active_mission = {"topic": "General Biologics & CGT", "standard": "Evaluate appropriate therapy.", "target_level": "Shows How"}
+        active_mission = {
+            "topic": "General Biologics & CGT", 
+            "standard": "Evaluate appropriate therapy.", 
+            "actionable_prompt": "Provide a clinical summary of a biologic or CGT therapy encounter.",
+            "target_level": "Shows How"
+        }
 
     # --- AUDIO CAPTURE ---
     text_key = f"ce_dictation_{learner_id}"
@@ -1458,7 +1463,7 @@ def get_todays_schedule(target_id=None):
     return today_sched
 
 def get_daily_ce_mission(learner_id):
-    """Dynamically builds a mission using existing ASHP/EPA curriculum standards."""
+    """Dynamically builds a mission using the specific Actionable_Activity from the curriculum."""
     today_sched = get_todays_schedule(learner_id)
     
     if today_sched.empty:
@@ -1468,15 +1473,16 @@ def get_daily_ce_mission(learner_id):
     if not target_subject:
         return None
         
-    # Default fallback baseline
+    # Default fallback if the spreadsheet is missing data
     mission_data = {
         "topic": target_subject,
         "standard": "General Clinical Application",
+        "actionable_prompt": f"Identify a relevant therapy related to {target_subject} and discuss its clinical application.",
         "target_level": "Shows How",
         "domain": "Application"
     }
     
-    # Extract the exact accreditation standards from the existing Curriculum DataFrame
+    # Extract the exact accreditation standards and Actionable Activity from the Curriculum DataFrame
     if not curriculum_df.empty:
         match = curriculum_df[curriculum_df['Topic'] == target_subject]
         if not match.empty:
@@ -1487,6 +1493,9 @@ def get_daily_ce_mission(learner_id):
             miller_level = row.get('Competence Level (Miller)', '')
             bloom_domain = row.get('Cognitive Domain', '')
             
+            # THE UPGRADE: Grab the specific actionable mission
+            action_activity = row.get('Actionable_Activity', '')
+            
             # Prioritize ASHP Objective, fallback to EPA
             core_standard = ashp_obj if pd.notna(ashp_obj) and str(ashp_obj).strip() != "" else epa
             
@@ -1496,6 +1505,8 @@ def get_daily_ce_mission(learner_id):
                 mission_data["target_level"] = miller_level
             if pd.notna(bloom_domain) and str(bloom_domain).strip() != "":
                 mission_data["domain"] = bloom_domain
+            if pd.notna(action_activity) and str(action_activity).strip() != "":
+                mission_data["actionable_prompt"] = str(action_activity).strip()
                 
     return mission_data
 
