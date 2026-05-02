@@ -452,7 +452,42 @@ def generate_ai_evaluation(raw_dictation, learner_name, rotation, topic, zone, c
     except Exception as e:
         st.error(f"AI Formatting Error: {str(e)}")
         return None
+
+def generate_ce_micro_lesson(raw_dictation, mission_dict):
+    """Evaluates the case against specific curriculum standards and generates CE."""
+    model = get_gemini_model()
+    if not model: return None
+    
+    prompt = f"""
+    You are an expert Clinical Pharmacist Preceptor acting as an evaluator for a Continuing Education (CE) module.
+    
+    The learner encountered a patient case today. You must evaluate if their actions 
+    satisfy the following programmatic standards:
+    - Topic: {mission_dict.get('topic')}
+    - Required Objective/Standard: {mission_dict.get('standard')}
+    - Target Competency Level (Miller's Pyramid): {mission_dict.get('target_level', 'Action')}
+    
+    Raw Case Dictation from the Learner:
+    {raw_dictation}
+    
+    Output Requirements:
+    Return ONLY a strict JSON object with exactly these 4 keys:
+    1. "StandardMet": Boolean (True if their dictation proves they performed the Required Objective at the Target Competency Level, False otherwise).
+    2. "Feedback": String (If True, validate how their action met the specific standard. If False, provide direct coaching on what clinical reasoning was missing to meet the standard).
+    3. "LearningPearls": Array of 3 Strings (Provide high-yield clinical pearls specifically related to the intersection of their case and the Topic).
+    4. "CEQuestions": Array of 2 Objects (Generate 2 multiple-choice questions to test their knowledge. Format: "Question", "Options" (array of 4), "CorrectAnswer", and "Explanation").
+    """
         
+    try:
+        response = model.generate_content(
+            prompt, 
+            generation_config=genai.GenerationConfig(response_mime_type="application/json")
+        )
+        return json.loads(response.text)
+    except Exception as e:
+        st.error(f"AI Microlearning Error: {str(e)}")
+        return None
+
 def generate_admin_document(doc_type, raw_notes, config, context=""):
     model = get_gemini_model()
     if not model: return None
@@ -926,7 +961,104 @@ def render_module_quiz(quiz_df, topic_name):
             st.info(f"**Explanation:** {row['Answer_Explanation']}")
             st.write("---")
         st.metric("Score", f"{score} / {len(module_questions)}")
+
+def render_ce_case_logger(learner_id):
+    st.subheader("🎙️ Log a Clinical Case for CE Credit")
+    
+    mission = get_daily_ce_mission(learner_id)
+    
+    if mission:
+        st.markdown(f"""
+        <div style="padding: 15px; border-left: 5px solid #e81e6d; background-color: #f9f9f9; border-radius: 5px; margin-bottom: 20px;">
+            <h4 style="margin-top: 0px; color: #e81e6d;">🎯 Today's Focus: {mission['topic']}</h4>
+            <p style="margin-bottom: 5px; font-size: 16px;"><strong>Program Objective:</strong> {mission['standard']}</p>
+            <p style="margin-bottom: 0px; font-size: 14px; color: #555;">
+                <i>Target Competency: {mission['target_level']} | Domain: {mission['domain']}</i>
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+        active_mission = mission
+    else:
+        st.info("No specific rotation scheduled. You may log an ad-hoc clinical encounter below.")
+        active_mission = {"topic": "General Biologics & CGT", "standard": "Evaluate appropriate therapy.", "target_level": "Shows How"}
+
+    # --- AUDIO CAPTURE ---
+    text_key = f"ce_dictation_{learner_id}"
+    if text_key not in st.session_state:
+        st.session_state[text_key] = ""
+
+    col_mic, col_trans = st.columns([1, 4])
+    with col_mic:
+        audio_bytes = audio_recorder(text="Record Case", recording_color="#e81e6d", neutral_color="#6aa36f", key=f"ce_rec_{learner_id}", pause_threshold=300.0)
+    
+    with col_trans:
+        if audio_bytes:
+            st.audio(audio_bytes, format="audio/wav")
+            if st.button("📝 Transcribe Case", key="btn_transcribe_ce"):
+                with st.spinner("Transcribing..."):
+                    transcript = transcribe_clinical_audio(audio_bytes)
+                    if transcript:
+                        st.session_state[text_key] = transcript
+                        st.rerun()
+
+    st.text_area("Review & Edit Your Case Notes", height=100, key=text_key)
+
+    # --- AI TRIGGER ---
+    if st.button("✨ Evaluate Mission & Generate CE Lesson", type="primary", use_container_width=True):
+        if len(st.session_state[text_key]) > 10:
+            with st.spinner(f"Analyzing case against program standards..."):
+                lesson = generate_ce_micro_lesson(st.session_state[text_key], active_mission)
+                if lesson:
+                    st.session_state.current_ce_lesson = lesson
+                    st.session_state.current_ce_topic = active_mission['topic']
+
+    # --- MICROLEARNING RESULTS & QUIZ ---
+    if "current_ce_lesson" in st.session_state and st.session_state.current_ce_lesson:
+        lesson = st.session_state.current_ce_lesson
         
+        st.divider()
+        if lesson.get("StandardMet", False):
+            st.success(f"✅ Mission Accomplished: {lesson.get('Feedback', '')}")
+        else:
+            st.warning(f"⚠️ Coaching Point: {lesson.get('Feedback', '')}")
+        
+        st.subheader("💡 Key Learning Pearls")
+        for pearl in lesson.get("LearningPearls", []):
+            st.markdown(f"- {pearl}")
+            
+        st.subheader("📝 Complete to Earn CE Credit")
+        with st.form(key="ce_quiz_form"):
+            user_answers = {}
+            for idx, q_data in enumerate(lesson.get("CEQuestions", [])):
+                st.markdown(f"**Q{idx+1}: {q_data['Question']}**")
+                user_answers[idx] = st.radio("Select answer:", q_data["Options"], key=f"ce_q_{idx}", index=None)
+                st.write("---")
+            
+            if st.form_submit_button("Submit Answers"):
+                score = 0
+                for idx, q_data in enumerate(lesson.get("CEQuestions", [])):
+                    if user_answers[idx] == q_data["CorrectAnswer"]:
+                        score += 1
+                        st.success(f"Q{idx+1}: Correct! {q_data['Explanation']}")
+                    else:
+                        st.error(f"Q{idx+1}: Incorrect. The answer is {q_data['CorrectAnswer']}. {q_data['Explanation']}")
+                
+                if score == len(lesson.get("CEQuestions", [])):
+                    st.balloons()
+                    st.success("🎉 CE Credit Earned! Logging to database...")
+                    # Logs the CE credit to your master evaluation database seamlessly
+                    log_evaluation_to_sheet(
+                        preceptor="AI-CE-System",
+                        resident=learner_id,
+                        rotation=st.session_state.get('current_ce_topic', 'CE Module'),
+                        objective="Point-of-Care Microlearning",
+                        criteria="CE Credit Earned",
+                        grade="Pass",
+                        comment="Completed AI-generated quiz based on live clinical dictation.",
+                        action_plan="",
+                        narrative=st.session_state[text_key]
+                    )
+
 def render_curriculum(current_role, current_tier):
     if curriculum_df.empty:
         st.warning("Curriculum data is currently unavailable.")
@@ -1323,7 +1455,50 @@ def get_todays_schedule(target_id=None):
         else:
             return pd.DataFrame()
             
-    return today_sched    
+    return today_sched
+
+def get_daily_ce_mission(learner_id):
+    """Dynamically builds a mission using existing ASHP/EPA curriculum standards."""
+    today_sched = get_todays_schedule(learner_id)
+    
+    if today_sched.empty:
+        return None
+        
+    target_subject = today_sched.iloc[0].get('Subject', None)
+    if not target_subject:
+        return None
+        
+    # Default fallback baseline
+    mission_data = {
+        "topic": target_subject,
+        "standard": "General Clinical Application",
+        "target_level": "Shows How",
+        "domain": "Application"
+    }
+    
+    # Extract the exact accreditation standards from the existing Curriculum DataFrame
+    if not curriculum_df.empty:
+        match = curriculum_df[curriculum_df['Topic'] == target_subject]
+        if not match.empty:
+            row = match.iloc[0]
+            
+            ashp_obj = row.get('ASHP Objective', '')
+            epa = row.get('EPA', '')
+            miller_level = row.get('Competence Level (Miller)', '')
+            bloom_domain = row.get('Cognitive Domain', '')
+            
+            # Prioritize ASHP Objective, fallback to EPA
+            core_standard = ashp_obj if pd.notna(ashp_obj) and str(ashp_obj).strip() != "" else epa
+            
+            if pd.notna(core_standard) and str(core_standard).strip() != "":
+                mission_data["standard"] = core_standard
+            if pd.notna(miller_level) and str(miller_level).strip() != "":
+                mission_data["target_level"] = miller_level
+            if pd.notna(bloom_domain) and str(bloom_domain).strip() != "":
+                mission_data["domain"] = bloom_domain
+                
+    return mission_data
+
 def render_daily_operations(learner_id, role):
     env_type = active_config.get("env_type", "clinical")
     st.markdown("## Daily Operations Command Center")
@@ -1806,11 +1981,16 @@ elif user_role == "learner":
     render_step_tracker(logged_in_id)
     st.write("---")
     
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎙️ Clinical Voice Journal", "🎯 Today's Plan", "📚 Curriculum Library", "📅 Schedule & Progress", "🎓 Profile & CV"])
-    
-    with tab1:
-        # FIXED: Changed logged_in_user to logged_in_id so the app doesn't crash!
-        render_learner_voice_journal(logged_in_id, active_config, active_config.get("eval_settings", {}))
+    # Ensure they are in the correct module to see the CE logic
+    if selected_env_key == "ABCGTBIO":
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎙️ Earn CE Credit (Point-of-Care)", "🎯 Today's Plan", "📚 Curriculum Library", "📅 Schedule & Progress", "🎓 Profile & CV"])
+        with tab1:
+            render_ce_case_logger(logged_in_id)
+    else:
+        # Standard display for EM and APPE learners
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎙️ Clinical Voice Journal", "🎯 Today's Plan", "📚 Curriculum Library", "📅 Schedule & Progress", "🎓 Profile & CV"])
+        with tab1:
+            render_learner_voice_journal(logged_in_id, active_config, active_config.get("eval_settings", {}))
         
     with tab2:
         render_daily_operations(logged_in_id, user_role)
