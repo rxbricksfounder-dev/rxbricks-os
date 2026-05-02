@@ -274,10 +274,10 @@ def load_all_data(sheet_name, standards_tab_name):
     rubric_df = fetch_sheet("Master_Rubric")
     
     if not curr.empty and not rubric_df.empty and 'Module_ID' in curr.columns and 'Module_ID' in rubric_df.columns:
-        # We only want to pull the specific actionable columns we need from the Rubric
+        # Pull the specific actionable columns we need from the Rubric
         rubric_subset = rubric_df[['Module_ID', 'Actionable_Activity', 'Scribe_Signals']]
         
-        # This merges the Actionable_Activity and Scribe_Signals into the Curriculum dataframe automatically!
+        # Merge the Actionable_Activity and Scribe_Signals into the Curriculum dataframe
         curr = pd.merge(curr, rubric_subset, on='Module_ID', how='left')
     # ---------------------------------------
 
@@ -295,10 +295,6 @@ def load_all_data(sheet_name, standards_tab_name):
             sched['End Date'] = pd.to_datetime(sched['End Date'], errors='coerce')
     
     return curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df, quiz_df
-    
-    sched['Start Date'] = pd.to_datetime(sched['Start Date'], errors='coerce')
-    if 'End Date' in sched.columns:
-        sched['End Date'] = pd.to_datetime(sched['End Date'], errors='coerce')
         
 curriculum_df, eval_df, schedule_df, users_df, assignments_df, rotation_tasks_df, ashp_standards_df, quiz_bank_df = load_all_data(active_sheet_name, active_config["standards_tab"])
 
@@ -409,6 +405,9 @@ def render_progress(col_target, items, working_df, eval_col):
 # ==========================================\
 # 2. AI ENGINES
 # ==========================================\
+# ==========================================\
+# 2. AI ENGINES
+# ==========================================\
 def generate_ai_evaluation(raw_dictation, learner_name, rotation, topic, zone, config, proven_bricks=None):
     model = get_gemini_model()
     if not model: return None
@@ -430,23 +429,28 @@ def generate_ai_evaluation(raw_dictation, learner_name, rotation, topic, zone, c
             evidence_text += f"- Objective: {brick.get('ASHP_Objective', 'N/A')} | Evidence Used: {brick['Matched_Evidence']}\n"
     
     prompt = f"""
-    You are an expert Clinical Pharmacist Preceptor acting as an evaluator for a Continuing Education (CE) module.
+    You are {role_context}.
+    First, evaluate the quality of the raw {nom['educator'].lower()} dictation. Then, format it into a highly professional evaluation.
     
-    The learner encountered a patient case today. You must rigorously evaluate if their dictated clinical actions 
-    satisfy the following daily mission and programmatic standards:
-    - Topic: {mission_dict.get('topic')}
-    - SPECIFIC DAILY MISSION: "{mission_dict.get('actionable_prompt')}"
-    - Required Accreditation Standard: {mission_dict.get('standard')}
+    Context:
+    * {nom['learner']}: {learner_name}
+    * Module/Rotation: {rotation}
+    * Target {config['evaluation_column'].split(' ')[-1]}: {topic}
+    * Focus Area: {zone}
     
-    Raw Case Dictation from the Learner:
+    {evidence_text}
+    
+    Raw {nom['educator']} Dictation:
     {raw_dictation}
     
     Output Requirements:
-    Return ONLY a strict JSON object with exactly these 4 keys:
-    1. "StandardMet": Boolean (True ONLY if their dictation clearly proves they accomplished the SPECIFIC DAILY MISSION. False otherwise).
-    2. "Feedback": String (If True, validate how their action met the specific mission. If False, provide direct coaching on what clinical reasoning was missing to fulfill the mission).
-    3. "LearningPearls": Array of 3 Strings (Provide high-yield clinical pearls specifically related to the intersection of their case and the Topic).
-    4. "CEQuestions": Array of 2 Objects (Generate 2 multiple-choice questions to test their knowledge. Format: "Question", "Options" (array of 4), "CorrectAnswer", and "Explanation").
+    Return ONLY a strict JSON object with exactly these 6 keys:
+    1. "QualityGrade": String ("Green", "Yellow", or "Red"). Red means the dictation was lazy or lacked appropriate context.
+    2. "QualityFeedback": String (1 short sentence of direct coaching to the {nom['educator'].lower()} explaining *why* their dictation scored that grade).
+    3. "Grade": Must be one of: {', '.join(config['eval_settings']['grading_scale'])}.
+    4. "Comment": A 1-2 sentence professional assessment. Ground this comment in the DETERMINISTIC EVIDENCE FOUND if any is provided.
+    5. "ActionPlan": 1-2 sentences detailing specific next steps.
+    6. "Narrative": A comprehensive synthesis paragraph ready for {eval_sys}. Incorporate the deterministic evidence into this narrative.
     """
         
     try:
