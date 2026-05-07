@@ -431,6 +431,9 @@ def generate_ai_evaluation(raw_dictation, learner_name, config, available_topics
     
     prompt = f"""
     You are {role_context}.
+    
+    STRICT HIPAA RULE: You are an AI Clinical Scribe. If the raw dictation contains any patient names, dates of birth, or medical record numbers (MRNs) that were not previously caught, you must immediately redact them and replace them with [PATIENT IDENTIFIER REDACTED] in your final narrative and comments.
+    
     First, evaluate the quality of the raw {nom['educator'].lower()} dictation. 
     Second, act as a data-classifier. Based on the dictation context, infer the most likely Rotation, Objective, Entrustment Level, and Interaction Type.
     
@@ -594,6 +597,9 @@ def transcribe_clinical_audio(audio_bytes, mime_type="audio/wav"):
     You are an expert medical transcriptionist and clinical pharmacist. 
     Transcribe the following clinical dictation accurately. 
     Ensure all medical terminology, drug names, and dosages are spelled correctly.
+    
+    STRICT HIPAA RULE: You are an AI Clinical Scribe. If the preceptor accidentally dictates a patient name, date of birth, or medical record number (MRN), you must immediately redact it and replace it with [PATIENT IDENTIFIER REDACTED] before returning the text.
+    
     Return ONLY the transcribed text. Do not include markdown or conversational filler.
     """
     try:
