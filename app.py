@@ -1009,9 +1009,10 @@ def render_ce_case_logger(learner_id):
     audio_mime = "audio/wav"
     
     with audio_tabs[0]:
-        recorded_audio = audio_recorder(text="Record Case", recording_color="#e81e6d", neutral_color="#6aa36f", key=f"ce_rec_{learner_id}", pause_threshold=300.0)
+        # Using Streamlit's perfectly stable, native audio widget!
+        recorded_audio = st.audio_input("Record Case", key=f"ce_rec_{learner_id}")
         if recorded_audio:
-            audio_bytes = recorded_audio
+            audio_bytes = recorded_audio.read()
             st.success("✅ Audio recorded successfully!")
 
     with audio_tabs[1]:
@@ -1230,9 +1231,10 @@ def render_learner_voice_journal(resident_id, active_config, eval_set):
     audio_mime = "audio/wav"
     
     with audio_tabs[0]:
-        recorded_audio = audio_recorder(text="Record Scenario", recording_color="#e81e6d", neutral_color="#6aa36f", key=f"self_rec_{resident_id}", pause_threshold=300.0)
+        # Using Streamlit's perfectly stable, native audio widget!
+        recorded_audio = st.audio_input("Record Scenario", key=f"self_rec_{resident_id}")
         if recorded_audio:
-            audio_bytes = recorded_audio
+            audio_bytes = recorded_audio.read()
             st.success("✅ Audio recorded successfully!")
 
     with audio_tabs[1]:
@@ -1385,9 +1387,10 @@ def render_evaluation_tool():
     audio_mime = "audio/wav"
     
     with audio_tabs[0]:
-        recorded_audio = audio_recorder(text="Click to Record", recording_color="#e81e6d", neutral_color="#6aa36f", key=f"recorder_{target_res_id}", pause_threshold=300.0)
+        # Using Streamlit's perfectly stable, native audio widget!
+        recorded_audio = st.audio_input("Click to Record", key=f"recorder_{target_res_id}")
         if recorded_audio:
-            audio_bytes = recorded_audio
+            audio_bytes = recorded_audio.read()
             st.success("✅ Audio recorded successfully!")
 
     with audio_tabs[1]:
