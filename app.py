@@ -273,12 +273,13 @@ def load_all_data(sheet_name, standards_tab_name):
     # --- NEW: AUTOMATED SQL-STYLE "JOIN" ---
     rubric_df = fetch_sheet("Master_Rubric")
     
-    if not curr.empty and not rubric_df.empty and 'Module_ID' in curr.columns and 'Module_ID' in rubric_df.columns:
-        # Pull the specific actionable columns we need from the Rubric
-        rubric_subset = rubric_df[['Module_ID', 'Actionable_Activity', 'Scribe_Signals']]
+    # We must join on 'Topic' because 'Module_ID' does not exist in 1_Curriculum
+    if not curr.empty and not rubric_df.empty and 'Topic' in curr.columns and 'Topic' in rubric_df.columns:
+        # Pull the specific actionable columns we need from the Rubric for the AI Scribe
+        rubric_subset = rubric_df[['Topic', 'Actionable_Activity', 'Scribe_Signals', 'ASHP_Objective', 'Miller_Level']]
         
-        # Merge the Actionable_Activity and Scribe_Signals into the Curriculum dataframe
-        curr = pd.merge(curr, rubric_subset, on='Module_ID', how='left')
+        # Merge them into the Curriculum dataframe
+        curr = pd.merge(curr, rubric_subset, on='Topic', how='left')
     # ---------------------------------------
 
     dataframes = [curr, resp, sched, user_db, assign_df, rotation_tasks_df, ashp_df, quiz_df] 
@@ -405,10 +406,8 @@ def render_progress(col_target, items, working_df, eval_col):
 # ==========================================\
 # 2. AI ENGINES
 # ==========================================\
-# ==========================================\
-# 2. AI ENGINES
-# ==========================================\
-def generate_ai_evaluation(raw_dictation, learner_name, rotation, topic, zone, config, proven_bricks=None):
+
+def generate_ai_evaluation(raw_dictation, learner_name, config, available_topics, proven_bricks=None):
     model = get_gemini_model()
     if not model: return None
     
@@ -421,36 +420,45 @@ def generate_ai_evaluation(raw_dictation, learner_name, rotation, topic, zone, c
     else:
         role_context = f"an expert Clinical Preceptor evaluating direct patient care and clinical autonomy."
     
-    # NEW: Inject the deterministic evidence
     evidence_text = "No specific clinical signals detected by the system."
     if proven_bricks:
         evidence_text = "DETERMINISTIC EVIDENCE FOUND BY SYSTEM AUDIT:\n"
         for brick in proven_bricks:
             evidence_text += f"- Objective: {brick.get('ASHP_Objective', 'N/A')} | Evidence Used: {brick['Matched_Evidence']}\n"
     
+    # Pass the actual curriculum topics to Gemini so it maps exactly to your sheet
+    topics_list_str = ", ".join([str(t) for t in available_topics if str(t).strip()])
+    
     prompt = f"""
     You are {role_context}.
-    First, evaluate the quality of the raw {nom['educator'].lower()} dictation. Then, format it into a highly professional evaluation.
+    First, evaluate the quality of the raw {nom['educator'].lower()} dictation. 
+    Second, act as a data-classifier. Based on the dictation context, infer the most likely Rotation, Objective, Entrustment Level, and Interaction Type.
     
     Context:
-    * {nom['learner']}: {learner_name}
-    * Module/Rotation: {rotation}
-    * Target {config['evaluation_column'].split(' ')[-1]}: {topic}
-    * Focus Area: {zone}
+    * {nom['learner']} Name: {learner_name}
     
     {evidence_text}
     
     Raw {nom['educator']} Dictation:
     {raw_dictation}
     
+    CLASSIFICATION LISTS (You MUST pick one exact match from these lists):
+    - Valid Rotations: {config['eval_settings'].get('rotations', ['Default'])}
+    - Valid Objectives (Topics): {topics_list_str}
+    - Valid Grades: {config['eval_settings']['grading_scale']}
+    - Valid Interaction Types: ["Clinical Scenario / Bedside Care", "Topic Discussion / Review", "Case Presentation", "Journal Club / Literature Review", "Project / Admin Review"]
+    
     Output Requirements:
-    Return ONLY a strict JSON object with exactly these 6 keys:
-    1. "QualityGrade": String ("Green", "Yellow", or "Red"). Red means the dictation was lazy or lacked appropriate context.
-    2. "QualityFeedback": String (1 short sentence of direct coaching to the {nom['educator'].lower()} explaining *why* their dictation scored that grade).
-    3. "Grade": Must be one of: {', '.join(config['eval_settings']['grading_scale'])}.
-    4. "Comment": A 1-2 sentence professional assessment. Ground this comment in the DETERMINISTIC EVIDENCE FOUND if any is provided.
-    5. "ActionPlan": 1-2 sentences detailing specific next steps.
-    6. "Narrative": A comprehensive synthesis paragraph ready for {eval_sys}. Incorporate the deterministic evidence into this narrative.
+    Return ONLY a strict JSON object with exactly these 9 keys:
+    1. "InferredRotation": String (Must exactly match one of the Valid Rotations)
+    2. "InferredObjective": String (Must match one of the Valid Objectives, or summarize in 3 words if completely missing)
+    3. "InferredGrade": String (Must exactly match one of the Valid Grades)
+    4. "InferredInteraction": String (Must exactly match one of the Valid Interaction Types)
+    5. "QualityGrade": String ("Green", "Yellow", or "Red"). Red means the dictation was lazy or lacked appropriate context.
+    6. "QualityFeedback": String (1 short sentence of direct coaching to the {nom['educator'].lower()} explaining *why* their dictation scored that grade).
+    7. "Comment": A 1-2 sentence professional assessment. Ground this comment in the DETERMINISTIC EVIDENCE FOUND if any is provided.
+    8. "ActionPlan": 1-2 sentences detailing specific next steps.
+    9. "Narrative": A comprehensive synthesis paragraph ready for {eval_sys}.
     """
         
     try:
@@ -1357,41 +1365,45 @@ def render_evaluation_tool():
     with col_b:
         zone_action = st.selectbox("Target Entrustment", eval_set.get("entrustment_scale", ["1", "2", "3", "4"]), key=f"zone_{target_res_id}")
         
-# --- NEW VOICE-TO-PHARMACADEMIC ENGINE ---
-    # --- UPGRADED VOICE-TO-PHARMACADEMIC ENGINE ---
-    st.write("---")
-    st.subheader("🎙️ Voice-to-PharmAcademic Scribe")
-    st.caption("Record your clinical discussion, topic review, or case presentation.")
+def render_evaluation_tool():
+    if not learner_dict:
+        st.warning("No learners found in the system.")
+        return
 
-    # 1. NEW: INTERACTION TYPE SELECTOR
-    interaction_type = st.selectbox(
-        "Type of Interaction", 
-        [
-            "Clinical Scenario / Bedside Care", 
-            "Topic Discussion / Review", 
-            "Case Presentation", 
-            "Journal Club / Literature Review", 
-            "Project / Admin Review"
-        ],
-        key=f"interaction_type_{target_res_id}"
+    nom = active_config["nomenclature"]
+    eval_set = active_config["eval_settings"]
+    topics = curriculum_df['Topic'].dropna().unique().tolist() if not curriculum_df.empty else ["No Curriculum Loaded"]
+
+    target_res_id = st.selectbox(
+        f"Select {nom['learner']} to Evaluate", 
+        options=list(learner_dict.keys()), 
+        format_func=lambda x: learner_dict.get(x, "Unknown"),
+        key="eval_tool_res"
     )
+    current_preceptor = st.session_state.get("name", f"Unknown {nom['educator']}")
+    
+    render_step_tracker(target_res_id)
+    st.write("---")
+
+    if 'eval_draft' not in st.session_state:
+        st.session_state.eval_draft = None
+
+    # THE GARMIN EXPERIENCE: Straight to recording. No forms!
+    st.subheader("🎙️ Zero-Click Clinical Scribe")
+    st.caption(f"Just hit record and describe the clinical encounter. Gemini will automatically route it to the correct rotation, objective, and grade for {learner_dict.get(target_res_id, 'the resident')}.")
 
     text_key = f"dictation_text_{target_res_id}"
     if text_key not in st.session_state:
         st.session_state[text_key] = ""
 
-    # 2. AUDIO RECORDING ROW
     audio_tabs = st.tabs(["🎙️ Record Audio", "📁 Upload Audio File"])
-    
     audio_bytes = None
     audio_mime = "audio/wav"
     
     with audio_tabs[0]:
-        # Using Streamlit's perfectly stable, native audio widget!
         recorded_audio = st.audio_input("Click to Record", key=f"recorder_{target_res_id}")
         if recorded_audio:
             audio_bytes = recorded_audio.read()
-            st.success("✅ Audio recorded successfully!")
 
     with audio_tabs[1]:
         uploaded_audio = st.file_uploader("Upload an audio file (.wav, .mp3, .m4a)", type=["wav", "mp3", "m4a"], key=f"upload_{target_res_id}")
@@ -1399,69 +1411,48 @@ def render_evaluation_tool():
             audio_bytes = uploaded_audio.read()
             if uploaded_audio.name.endswith(".mp3"): audio_mime = "audio/mp3"
             elif uploaded_audio.name.endswith(".m4a"): audio_mime = "audio/mp4"
-            st.success("✅ Audio file uploaded successfully!")
 
     if audio_bytes:
         st.write("---")
-        col_playback, col_actions = st.columns([1, 1])
-        with col_playback:
-            st.audio(audio_bytes, format=audio_mime)
-        with col_actions:
-            st.download_button(label="📥 Download Audio File", data=audio_bytes, file_name=f"clinical_dictation_eval.{audio_mime.split('/')[-1]}", mime=audio_mime, use_container_width=True)
-            if st.button("✨ Send to Gemini for Transcription", type="primary", use_container_width=True, key=f"trans_{target_res_id}"):
-                status_placeholder = st.empty()
-                with status_placeholder.container():
-                    st.info("🧠 Gemini is analyzing clinical audio... Please wait.")
-                    st.progress(50)
-                with st.spinner("Processing..."):
-                    transcript = transcribe_clinical_audio(audio_bytes, mime_type=audio_mime)
-                    if transcript:
-                        st.session_state[text_key] = transcript
-                        status_placeholder.success("✅ Transcription complete! Review below.")
+        if st.button("✨ Process Audio & Generate PharmAcademic Draft", type="primary", use_container_width=True, key=f"trans_{target_res_id}"):
+            status_placeholder = st.empty()
+            with status_placeholder.container():
+                st.info("🧠 Gemini is transcribing and classifying your clinical audio... Please wait.")
+                st.progress(50)
+            with st.spinner("Processing..."):
+                
+                # 1. Transcribe
+                transcript = transcribe_clinical_audio(audio_bytes, mime_type=audio_mime)
+                if transcript:
+                    st.session_state[text_key] = transcript
+                    
+                    # 2. Check for Deterministic Matches (Now functioning properly with the joined Scribe_Signals!)
+                    matcher = RxBricksScribeMatcher(curriculum_df) 
+                    proven_bricks = matcher.analyze_transcript(transcript)
+                    
+                    # 3. Send to the Classifier AI
+                    ai_result = generate_ai_evaluation(
+                        raw_dictation=transcript, 
+                        learner_name=learner_dict.get(target_res_id, target_res_id), 
+                        config=active_config,
+                        available_topics=topics,
+                        proven_bricks=proven_bricks
+                    )
+                    
+                    if ai_result:
+                        st.session_state.eval_draft = ai_result
+                        status_placeholder.success("✅ Evaluation completely routed and generated! Review below.")
                         st.rerun()
-                    else:
-                        status_placeholder.error("❌ Transcription failed.")
-
-    # 3. TEXT AREA (Auto-Synced)
-    st.markdown("**Review & Edit Dictation** (or type manually)")
-    st.text_area("Hidden Label", height=150, key=text_key, label_visibility="collapsed")
-
-    # 4. AI MAPPING & GRADING ENGINE
-    if st.button("✨ Assess Quality & Map to PharmAcademic", type="primary", use_container_width=True, key=f"draft_btn_{target_res_id}"):
-        if len(st.session_state[text_key]) < 5:
-            st.warning("Please dictate or type notes before generating the evaluation!")
-        else:
-            with st.spinner(f"AI Coach is analyzing this {interaction_type.split('/')[0]}..."):
-                
-                # 1. NEW: Run the Deterministic Matcher first!
-                # We pass curriculum_df because that is where the Scribe_Signals column lives
-                matcher = RxBricksScribeMatcher(curriculum_df) 
-                proven_bricks = matcher.analyze_transcript(st.session_state[text_key])
-                
-                if proven_bricks:
-                    st.toast(f"✅ Found {len(proven_bricks)} exact clinical signals from the rubric!")
                 else:
-                    st.toast("⚠️ No exact clinical signals matched the rubric.")
+                    status_placeholder.error("❌ Transcription failed.")
 
-                # 2. Pass the transcript AND the proven bricks to Gemini
-                enriched_dictation = f"[Interaction Type: {interaction_type}]\n\n{st.session_state[text_key]}"
-                
-                ai_result = generate_ai_evaluation(
-                    raw_dictation=enriched_dictation, 
-                    learner_name=learner_dict.get(target_res_id, target_res_id), 
-                    rotation=selected_rotation, 
-                    topic=selected_action, 
-                    zone=zone_action, 
-                    config=active_config,
-                    proven_bricks=proven_bricks # <--- Injecting the hard proof here
-                )
-                if ai_result:
-                    st.session_state.eval_draft = ai_result
-
-    # 5. DISPLAY & SAVE LOGIC
+    # DISPLAY REVIEW & SAVE LOGIC (Only shows after AI processes)
     if "eval_draft" in st.session_state and st.session_state.eval_draft:
         draft = st.session_state.eval_draft
         st.divider()
+        
+        st.markdown("**Review & Edit Your Raw Dictation**")
+        st.text_area("Hidden Label", height=100, key=text_key, label_visibility="collapsed")
         
         q_grade = draft.get("QualityGrade", "Green")
         if q_grade == "Red":
@@ -1471,26 +1462,42 @@ def render_evaluation_tool():
         else:
             st.success(f"✅ **AI Coach (Robust Entry):** {draft.get('QualityFeedback')}")
 
-        st.subheader(f"📋 PharmAcademic Draft")
-        col_c, col_d = st.columns([1, 3])
+        st.subheader(f"📋 AI-Inferred Routing & Draft")
+        st.caption("Gemini has pre-filled these based on your audio. Tweak them if needed before saving.")
+        
+        # UI generated dynamically based on AI's guesses
+        col_c, col_d = st.columns(2)
         with col_c:
-            safe_grade = draft.get("Grade", eval_set["grading_scale"][2] if len(eval_set["grading_scale"]) > 2 else "Pass")
+            safe_rot = draft.get("InferredRotation", eval_set.get("rotations", ["Default"])[0])
+            if safe_rot not in eval_set.get("rotations", []): safe_rot = eval_set.get("rotations", ["Default"])[0]
+            final_rot = st.selectbox("Rotation", eval_set.get("rotations", ["Default"]), index=eval_set.get("rotations", ["Default"]).index(safe_rot), key=f"frot_{target_res_id}")
+            
+            safe_obj = draft.get("InferredObjective", topics[0] if topics else "Unknown")
+            if safe_obj not in topics: topics.insert(0, safe_obj) # If AI hallucinates slightly, keep it in the list
+            final_obj = st.selectbox(f"Target {active_config['evaluation_column'].split(' ')[-1]}", topics, index=topics.index(safe_obj), key=f"fobj_{target_res_id}")
+
+        with col_d:
+            safe_grade = draft.get("InferredGrade", eval_set["grading_scale"][2] if len(eval_set["grading_scale"]) > 2 else "Pass")
             if safe_grade not in eval_set["grading_scale"]: safe_grade = eval_set["grading_scale"][0]
             final_grade = st.selectbox("Grade", eval_set["grading_scale"], index=eval_set["grading_scale"].index(safe_grade), key=f"fg_{target_res_id}")
-        with col_d:
-            final_comment = st.text_input("Comment", value=draft.get("Comment", ""), key=f"fc_{target_res_id}")
             
+            interaction_opts = ["Clinical Scenario / Bedside Care", "Topic Discussion / Review", "Case Presentation", "Journal Club / Literature Review", "Project / Admin Review"]
+            safe_int = draft.get("InferredInteraction", interaction_opts[0])
+            if safe_int not in interaction_opts: safe_int = interaction_opts[0]
+            final_interaction = st.selectbox("Interaction Type", interaction_opts, index=interaction_opts.index(safe_int), key=f"fint_{target_res_id}")
+            
+        final_comment = st.text_input("Comment", value=draft.get("Comment", ""), key=f"fc_{target_res_id}")
         final_action = st.text_area("Action Plan", value=draft.get("ActionPlan", ""), height=80, key=f"fa_{target_res_id}")
         final_narrative = st.text_area("Overall Narrative (Editable)", value=draft.get("Narrative", ""), height=150, key=f"fn_{target_res_id}")
         
-        if st.button("💾 Save to Master Database", type="primary", key=f"save_{target_res_id}"):
+        if st.button("💾 Confirmed: Save to Master Database", type="primary", key=f"save_{target_res_id}", use_container_width=True):
             with st.spinner("Writing securely to Google Sheets..."):
                 success = log_evaluation_to_sheet(
                     preceptor=current_preceptor, 
                     resident=target_res_id,  
-                    rotation=selected_rotation,
-                    objective=selected_action,
-                    criteria=interaction_type, # <--- SAVES THE SPECIFIC INTERACTION TYPE TO YOUR DATABASE
+                    rotation=final_rot,
+                    objective=final_obj,
+                    criteria=final_interaction,
                     grade=final_grade,
                     comment=final_comment,
                     action_plan=final_action,
@@ -1499,6 +1506,7 @@ def render_evaluation_tool():
                     pharmacademic_text=final_narrative
                 )
                 if success:
+                    st.balloons()
                     st.success("🎉 Safely logged to Database! Ready for export.")
                     st.session_state.eval_draft = None
                     
