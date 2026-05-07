@@ -921,15 +921,13 @@ def render_resident_profile(learner_id, is_preceptor_view=False):
 # =========================================================
 # UI BLOCKS
 # =========================================================
-def render_module_quiz(quiz_df, topic_name):
+def render_module_quiz(quiz_df, topic_name, unique_suffix=""):
     if pd.isna(topic_name) or not topic_name or quiz_df.empty: return
     
     # Strip spaces and underscores from the topic for a universal match
-    # Example: "1.1 Biological Drug Basics" -> "1.1biologicaldrugbasics"
     safe_topic = str(topic_name).strip().lower().replace(" ", "").replace("_", "")
     
     # Strip spaces and underscores from the Form Names column
-    # Example: "QUESTIONS_1.1_BIOLOGICAL_DRUG_BASICS" -> "questions1.1biologicaldrugbasics"
     search_column = quiz_df['Form_Name'].astype(str).str.lower().str.replace(" ", "").str.replace("_", "")
     
     # Check if the sanitized topic exists inside the sanitized file name
@@ -942,7 +940,11 @@ def render_module_quiz(quiz_df, topic_name):
     st.divider()
     st.subheader(f"📝 Knowledge Check")
     
+    # Make the key globally unique to prevent duplicate form errors
     safe_state_key = safe_topic.replace(":", "")
+    if unique_suffix:
+        safe_state_key = f"{safe_state_key}_{unique_suffix}"
+        
     if f"quiz_sub_{safe_state_key}" not in st.session_state:
         st.session_state[f"quiz_sub_{safe_state_key}"] = False
 
@@ -1251,7 +1253,8 @@ def render_learner_dashboard(learner_id, config):
                         st.link_button("📚 Open Quick Review Material", res_url)
 
             # Instantly render the quiz for this specific topic!
-            render_module_quiz(quiz_bank_df, topic)
+            # We pass the index (idx) to prevent duplicate key errors if the same topic appears twice
+            render_module_quiz(quiz_bank_df, topic, unique_suffix=f"dash_{idx}")
 
 def render_learner_voice_journal(resident_id, active_config, eval_set):
     """A dedicated Voice-to-PharmAcademic tool for Resident Self-Reflection."""
