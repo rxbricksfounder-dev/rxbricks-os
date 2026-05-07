@@ -577,7 +577,7 @@ def run_gap_analysis(standard_name, evaluation_data_subset, config):
     except Exception as e:
         return f"Error running AI Audit: {str(e)}"
 
-def transcribe_clinical_audio(audio_bytes):
+def transcribe_clinical_audio(audio_bytes, mime_type="audio/wav"):
     """Passes raw audio bytes to Gemini for clinical transcription."""
     model = get_gemini_model()
     if not model: return None
@@ -592,7 +592,7 @@ def transcribe_clinical_audio(audio_bytes):
         # Gemini natively accepts multimodal byte data
         response = model.generate_content([
             prompt,
-            {"mime_type": "audio/wav", "data": audio_bytes}
+            {"mime_type": mime_type, "data": audio_bytes}
         ])
         return response.text
     except Exception as e:
@@ -1002,19 +1002,46 @@ def render_ce_case_logger(learner_id):
     if text_key not in st.session_state:
         st.session_state[text_key] = ""
 
-    col_mic, col_trans = st.columns([1, 4])
-    with col_mic:
-        audio_bytes = audio_recorder(text="Record Case", recording_color="#e81e6d", neutral_color="#6aa36f", key=f"ce_rec_{learner_id}", pause_threshold=300.0)
+    # Create tabs to separate Recording from Uploading
+    audio_tabs = st.tabs(["🎙️ Record Audio", "📁 Upload Audio File"])
     
-    with col_trans:
-        if audio_bytes:
-            st.audio(audio_bytes, format="audio/wav")
-            if st.button("📝 Transcribe Case", key="btn_transcribe_ce"):
-                with st.spinner("Transcribing..."):
-                    transcript = transcribe_clinical_audio(audio_bytes)
+    audio_bytes = None
+    audio_mime = "audio/wav"
+    
+    with audio_tabs[0]:
+        recorded_audio = audio_recorder(text="Record Case", recording_color="#e81e6d", neutral_color="#6aa36f", key=f"ce_rec_{learner_id}", pause_threshold=300.0)
+        if recorded_audio:
+            audio_bytes = recorded_audio
+            st.success("✅ Audio recorded successfully!")
+
+    with audio_tabs[1]:
+        uploaded_audio = st.file_uploader("Upload an audio file (.wav, .mp3, .m4a)", type=["wav", "mp3", "m4a"], key=f"ce_upload_{learner_id}")
+        if uploaded_audio:
+            audio_bytes = uploaded_audio.read()
+            if uploaded_audio.name.endswith(".mp3"): audio_mime = "audio/mp3"
+            elif uploaded_audio.name.endswith(".m4a"): audio_mime = "audio/mp4"
+            st.success("✅ Audio file uploaded successfully!")
+
+    if audio_bytes:
+        st.write("---")
+        col_playback, col_actions = st.columns([1, 1])
+        with col_playback:
+            st.audio(audio_bytes, format=audio_mime)
+        with col_actions:
+            st.download_button(label="📥 Download Audio File", data=audio_bytes, file_name=f"clinical_dictation_ce.{audio_mime.split('/')[-1]}", mime=audio_mime, use_container_width=True)
+            if st.button("✨ Send to Gemini for Transcription", type="primary", use_container_width=True, key=f"btn_transcribe_ce_{learner_id}"):
+                status_placeholder = st.empty()
+                with status_placeholder.container():
+                    st.info("🧠 Gemini is analyzing clinical audio... Please wait.")
+                    st.progress(50)
+                with st.spinner("Processing..."):
+                    transcript = transcribe_clinical_audio(audio_bytes, mime_type=audio_mime)
                     if transcript:
                         st.session_state[text_key] = transcript
+                        status_placeholder.success("✅ Transcription complete! Review below.")
                         st.rerun()
+                    else:
+                        status_placeholder.error("❌ Transcription failed. Check API key or audio format.")
 
     st.text_area("Review & Edit Your Case Notes", height=100, key=text_key)
 
@@ -1197,20 +1224,45 @@ def render_learner_voice_journal(resident_id, active_config, eval_set):
         st.session_state[text_key] = ""
 
     # 2. AUDIO CAPTURE ROW
-    col_mic, col_trans = st.columns([1, 4])
-    with col_mic:
-        audio_bytes = audio_recorder(text="Record Scenario", recording_color="#e81e6d", neutral_color="#6aa36f", key=f"self_rec_{resident_id}", pause_threshold=300.0)
+    audio_tabs = st.tabs(["🎙️ Record Audio", "📁 Upload Audio File"])
     
-    with col_trans:
-        if audio_bytes:
-            st.audio(audio_bytes, format="audio/wav")
-            if st.button("📝 Transcribe My Audio", type="secondary", key="self_transcribe_btn"):
-                with st.spinner("Transcribing..."):
-                    transcript = transcribe_clinical_audio(audio_bytes)
+    audio_bytes = None
+    audio_mime = "audio/wav"
+    
+    with audio_tabs[0]:
+        recorded_audio = audio_recorder(text="Record Scenario", recording_color="#e81e6d", neutral_color="#6aa36f", key=f"self_rec_{resident_id}", pause_threshold=300.0)
+        if recorded_audio:
+            audio_bytes = recorded_audio
+            st.success("✅ Audio recorded successfully!")
+
+    with audio_tabs[1]:
+        uploaded_audio = st.file_uploader("Upload an audio file (.wav, .mp3, .m4a)", type=["wav", "mp3", "m4a"], key=f"self_upload_{resident_id}")
+        if uploaded_audio:
+            audio_bytes = uploaded_audio.read()
+            if uploaded_audio.name.endswith(".mp3"): audio_mime = "audio/mp3"
+            elif uploaded_audio.name.endswith(".m4a"): audio_mime = "audio/mp4"
+            st.success("✅ Audio file uploaded successfully!")
+
+    if audio_bytes:
+        st.write("---")
+        col_playback, col_actions = st.columns([1, 1])
+        with col_playback:
+            st.audio(audio_bytes, format=audio_mime)
+        with col_actions:
+            st.download_button(label="📥 Download Audio File", data=audio_bytes, file_name=f"clinical_dictation_journal.{audio_mime.split('/')[-1]}", mime=audio_mime, use_container_width=True)
+            if st.button("✨ Send to Gemini for Transcription", type="primary", use_container_width=True, key=f"self_transcribe_btn_{resident_id}"):
+                status_placeholder = st.empty()
+                with status_placeholder.container():
+                    st.info("🧠 Gemini is analyzing clinical audio... Please wait.")
+                    st.progress(50)
+                with st.spinner("Processing..."):
+                    transcript = transcribe_clinical_audio(audio_bytes, mime_type=audio_mime)
                     if transcript:
                         st.session_state[text_key] = transcript
-                        st.success("Transcription complete!")
+                        status_placeholder.success("✅ Transcription complete! Review below.")
                         st.rerun()
+                    else:
+                        status_placeholder.error("❌ Transcription failed.")
 
     # 3. TEXT AREA
     st.markdown("**Review & Edit Your Scenario**")
@@ -1327,20 +1379,45 @@ def render_evaluation_tool():
         st.session_state[text_key] = ""
 
     # 2. AUDIO RECORDING ROW
-    col_mic, col_trans = st.columns([1, 4])
-    with col_mic:
-        audio_bytes = audio_recorder(text="Click to Record", recording_color="#e81e6d", neutral_color="#6aa36f", key=f"recorder_{target_res_id}", pause_threshold=300.0)
+    audio_tabs = st.tabs(["🎙️ Record Audio", "📁 Upload Audio File"])
     
-    with col_trans:
-        if audio_bytes:
-            st.audio(audio_bytes, format="audio/wav")
-            if st.button("📝 Transcribe Audio", type="secondary", key=f"trans_{target_res_id}"):
-                with st.spinner("Transcribing clinical audio..."):
-                    transcript = transcribe_clinical_audio(audio_bytes)
+    audio_bytes = None
+    audio_mime = "audio/wav"
+    
+    with audio_tabs[0]:
+        recorded_audio = audio_recorder(text="Click to Record", recording_color="#e81e6d", neutral_color="#6aa36f", key=f"recorder_{target_res_id}", pause_threshold=300.0)
+        if recorded_audio:
+            audio_bytes = recorded_audio
+            st.success("✅ Audio recorded successfully!")
+
+    with audio_tabs[1]:
+        uploaded_audio = st.file_uploader("Upload an audio file (.wav, .mp3, .m4a)", type=["wav", "mp3", "m4a"], key=f"upload_{target_res_id}")
+        if uploaded_audio:
+            audio_bytes = uploaded_audio.read()
+            if uploaded_audio.name.endswith(".mp3"): audio_mime = "audio/mp3"
+            elif uploaded_audio.name.endswith(".m4a"): audio_mime = "audio/mp4"
+            st.success("✅ Audio file uploaded successfully!")
+
+    if audio_bytes:
+        st.write("---")
+        col_playback, col_actions = st.columns([1, 1])
+        with col_playback:
+            st.audio(audio_bytes, format=audio_mime)
+        with col_actions:
+            st.download_button(label="📥 Download Audio File", data=audio_bytes, file_name=f"clinical_dictation_eval.{audio_mime.split('/')[-1]}", mime=audio_mime, use_container_width=True)
+            if st.button("✨ Send to Gemini for Transcription", type="primary", use_container_width=True, key=f"trans_{target_res_id}"):
+                status_placeholder = st.empty()
+                with status_placeholder.container():
+                    st.info("🧠 Gemini is analyzing clinical audio... Please wait.")
+                    st.progress(50)
+                with st.spinner("Processing..."):
+                    transcript = transcribe_clinical_audio(audio_bytes, mime_type=audio_mime)
                     if transcript:
                         st.session_state[text_key] = transcript
-                        st.success("Transcription complete!")
+                        status_placeholder.success("✅ Transcription complete! Review below.")
                         st.rerun()
+                    else:
+                        status_placeholder.error("❌ Transcription failed.")
 
     # 3. TEXT AREA (Auto-Synced)
     st.markdown("**Review & Edit Dictation** (or type manually)")
