@@ -1199,6 +1199,60 @@ def render_curriculum(current_role, current_tier):
                 # Render the quiz at the bottom of the module view
     render_module_quiz(quiz_bank_df, first_item['Topic'])
 
+def render_learner_dashboard(learner_id, config):
+    st.subheader("🚀 My Performance & Rewards")
+
+    # 1. Front and center Garmin tracker
+    render_step_counter(learner_id=learner_id, weekly_goal=5)
+    st.divider()
+
+    # 2. Get recent evaluations
+    live_eval_df = get_evaluation_log(active_sheet_name)
+    if live_eval_df.empty:
+        st.info("Awaiting your first clinical evaluation...")
+        return
+
+    my_evals = get_learner_evals(live_eval_df, config, learner_id)
+    if my_evals.empty:
+        st.info("No evaluations on record yet. Get out there and hustle!")
+        return
+
+    # Sort to get the most recent ones
+    my_evals['Timestamp'] = pd.to_datetime(my_evals['Timestamp'], errors='coerce')
+    recent_evals = my_evals.sort_values(by='Timestamp', ascending=False).head(5) # Show top 5
+
+    st.subheader("⚾ Recent Clinical Plays & Bonus Opportunities")
+    st.caption("Turn your recent evaluations into extra credit by completing targeted micro-learning.")
+
+    for idx, row in recent_evals.iterrows():
+        # Safely extract the topic/objective name
+        eval_col = config.get('evaluation_column', 'ASHP Objective')
+        topic = str(row.get(eval_col, row.get('ASHP Objective', 'Unknown Topic'))).strip()
+        grade = row.get('Grade', 'N/A')
+        date_str = row['Timestamp'].strftime('%b %d, %Y') if pd.notna(row['Timestamp']) else "Recent"
+        preceptor = row.get('Preceptor Name', 'Preceptor')
+
+        # The Banana Ball "Extra Point" Expander
+        with st.expander(f"🏅 {date_str} | {topic} (Grade: {grade})"):
+            st.markdown(f"**Evaluator:** {preceptor}")
+            st.markdown(f"**Feedback:** {row.get('Comment', 'No comment provided.')}")
+            st.write("---")
+            
+            # The Gamification Prompt
+            st.markdown("### 🍌 Earn Bonus Points")
+            st.info(f"Want to lock in your knowledge on **{topic}** and boost your clinical score?")
+
+            # Provide the quick reference material if it exists in the curriculum
+            if not curriculum_df.empty:
+                topic_resources = curriculum_df[curriculum_df['Topic'] == topic]
+                if not topic_resources.empty:
+                    res_url = topic_resources.iloc[0].get('Resource URL (Published)', None)
+                    if pd.notna(res_url) and str(res_url).strip() != "":
+                        st.link_button("📚 Open Quick Review Material", res_url)
+
+            # Instantly render the quiz for this specific topic!
+            render_module_quiz(quiz_bank_df, topic)
+
 def render_learner_voice_journal(resident_id, active_config, eval_set):
     """A dedicated Voice-to-PharmAcademic tool for Resident Self-Reflection."""
     
@@ -2093,18 +2147,22 @@ elif user_role == "learner":
     render_step_tracker(logged_in_id)
     st.write("---")
     
-    # Ensure they are in the correct module to see the CE logic
+    # NEW TAB ORDER: Performance Dashboard is now Front and Center!
     if selected_env_key == "ABCGTBIO":
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎙️ Earn CE Credit (Point-of-Care)", "🎯 Today's Plan", "📚 Curriculum Library", "📅 Schedule & Progress", "🎓 Profile & CV"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🚀 Performance Dashboard", "🎙️ Earn CE Credit", "🎯 Today's Plan", "📚 Curriculum Library", "🎓 Profile & CV"])
         with tab1:
+            render_learner_dashboard(logged_in_id, active_config)
+        with tab2:
             render_ce_case_logger(logged_in_id)
     else:
         # Standard display for EM and APPE learners
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎙️ Clinical Voice Journal", "🎯 Today's Plan", "📚 Curriculum Library", "📅 Schedule & Progress", "🎓 Profile & CV"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🚀 Performance Dashboard", "🎙️ Clinical Voice Journal", "🎯 Today's Plan", "📚 Curriculum Library", "🎓 Profile & CV"])
         with tab1:
+            render_learner_dashboard(logged_in_id, active_config)
+        with tab2:
             render_learner_voice_journal(logged_in_id, active_config, active_config.get("eval_settings", {}))
         
-    with tab2:
+    with tab3:
         render_daily_operations(logged_in_id, user_role)
         render_assignments(logged_in_id)
         
@@ -2145,10 +2203,12 @@ elif user_role == "learner":
                             else:
                                 st.warning(msg)
             
-    with tab3:
+    with tab4:
         render_curriculum(user_role, user_tier)
         
-    with tab4:     
+    with tab5:     
+        render_resident_profile(logged_in_id, is_preceptor_view=False)
+        
         # --- FEATURE FLAG CHECK ---
         if active_config.get("show_upcoming_schedule", True):
             
@@ -2158,7 +2218,6 @@ elif user_role == "learner":
                 if id_col not in schedule_df.columns:
                     id_col = active_config.get("learner_column", "Resident Name")
                     
-                # THE SAFETY NET
                 if id_col not in schedule_df.columns:
                     possible_fallbacks = ["Candidate Name", "Resident", "Resident Name", "Student Name", "Student", "Name", "Learner"]
                     for fallback in possible_fallbacks:
@@ -2169,10 +2228,10 @@ elif user_role == "learner":
             # --- DYNAMIC UPCOMING SCHEDULE ---
             env_type = active_config.get("env_type", "clinical")
             sched_header = "📅 Upcoming Study Schedule" if env_type == "academic" else "📅 Upcoming Shifts"
+            st.divider()
             st.subheader(sched_header)
 
             if not schedule_df.empty:
-                # Safe learner ID mapping
                 id_col = active_config.get("learner_id_column", "Learner_ID")
                 if id_col not in schedule_df.columns:
                     id_col = active_config.get("learner_column", "Resident Name")
@@ -2190,7 +2249,6 @@ elif user_role == "learner":
 
                     if not my_sched_all.empty and date_col in my_sched_all.columns:
                         try:
-                            # Robust date parsing (ignores bad text safely)
                             my_sched_all[date_col] = pd.to_datetime(my_sched_all[date_col], errors='coerce')
                             my_sched_all = my_sched_all.dropna(subset=[date_col])
 
@@ -2212,42 +2270,3 @@ elif user_role == "learner":
                     st.warning("⚠️ Schedule Error: Could not find a matching student name column.")
             else:
                 st.warning("Schedule data unavailable.")
-        
-        st.divider()
-        render_step_counter(learner_id=logged_in_id, weekly_goal=5)
-        st.divider()
-        
-        st.subheader("📈 My 10 Most Recent Evaluations")
-        live_eval_df = get_evaluation_log(active_sheet_name) 
-        if not live_eval_df.empty:
-            my_evals = get_learner_evals(live_eval_df, active_config, logged_in_id)
-            if not my_evals.empty:
-                my_evals['Timestamp'] = pd.to_datetime(my_evals['Timestamp'], errors='coerce')
-                recent_10 = my_evals.sort_values(by='Timestamp', ascending=False).head(10)
-                recent_10['Timestamp'] = recent_10['Timestamp'].dt.strftime('%Y-%m-%d %H:%M')
-                st.metric("Total Lifetime Evaluations Logged", len(my_evals))
-                st.dataframe(recent_10, use_container_width=True, hide_index=True)
-            else:
-                st.info("No evaluations on record.")
-
-    with tab5:
-        render_resident_profile(logged_in_id, is_preceptor_view=False)
-        
-        # The 'else' block that generated the alert has been completely removed from here.
-
-        st.divider()
-        render_step_counter(learner_id=logged_in_id, weekly_goal=5)
-        st.divider()
-        
-        st.subheader("📈 My 10 Most Recent Evaluations")
-        live_eval_df = get_evaluation_log(active_sheet_name) 
-        if not live_eval_df.empty:
-            my_evals = get_learner_evals(live_eval_df, active_config, logged_in_id)
-            if not my_evals.empty:
-                my_evals['Timestamp'] = pd.to_datetime(my_evals['Timestamp'], errors='coerce')
-                recent_10 = my_evals.sort_values(by='Timestamp', ascending=False).head(10)
-                recent_10['Timestamp'] = recent_10['Timestamp'].dt.strftime('%Y-%m-%d %H:%M')
-                st.metric("Total Lifetime Evaluations Logged", len(my_evals))
-                st.dataframe(recent_10, use_container_width=True, hide_index=True)
-            else:
-                st.info("No evaluations on record.")
