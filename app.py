@@ -989,47 +989,26 @@ def render_module_quiz(quiz_df, topic_name, unique_suffix=""):
         st.metric("Score", f"{score} / {len(module_questions)}")
 
 def render_ce_case_logger(learner_id):
-    st.subheader("🎙️ Log a Clinical Case for CE Credit")
-    
-    mission = get_daily_ce_mission(learner_id)
-    
-    if mission:
-        st.markdown(f"""
-        <div style="padding: 15px; border-left: 5px solid #e81e6d; background-color: #f9f9f9; border-radius: 5px; margin-bottom: 20px;">
-            <h4 style="margin-top: 0px; color: #e81e6d;">🎯 Today's Mission: {mission['topic']}</h4>
-            <p style="margin-bottom: 5px; font-size: 18px; color: #333;"><strong>Your Goal:</strong> <i>{mission['actionable_prompt']}</i></p>
-            <p style="margin-bottom: 0px; font-size: 14px; color: #666;">
-                Standard: {mission['standard']} | Target Competency: {mission['target_level']}
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
-        active_mission = mission
-    else:
-        st.info("No specific rotation scheduled. You may log an ad-hoc clinical encounter below.")
-        active_mission = {
-            "topic": "General Biologics & CGT", 
-            "standard": "Evaluate appropriate therapy.", 
-            "actionable_prompt": "Provide a clinical summary of a biologic or CGT therapy encounter.",
-            "target_level": "Shows How"
-        }
+    st.subheader("🎙️ Micro-CE Voice Logger")
+    st.caption("Record a quick reflection on how you applied a biologic, biosimilar, or CGT concept in practice today. The AI will automatically map it to the curriculum and award your Micro-CE credit.")
 
-    # --- AUDIO CAPTURE ---
+    nom = active_config.get("nomenclature", {})
+    eval_set = active_config.get("eval_settings", {})
+    topics = curriculum_df['Topic'].dropna().unique().tolist() if not curriculum_df.empty else ["Unknown Topic"]
+
     text_key = f"ce_dictation_{learner_id}"
     if text_key not in st.session_state:
         st.session_state[text_key] = ""
 
-    # Create tabs to separate Recording from Uploading
-    audio_tabs = st.tabs(["🎙️ Record Audio", "📁 Upload Audio File"])
-    
+    # 1. AUDIO CAPTURE USING NATIVE WIDGET
+    audio_tabs = st.tabs(["🎙️ Record Reflection", "📁 Upload Audio File"])
     audio_bytes = None
     audio_mime = "audio/wav"
     
     with audio_tabs[0]:
-        # Using Streamlit's perfectly stable, native audio widget!
-        recorded_audio = st.audio_input("Record Case", key=f"ce_rec_{learner_id}")
+        recorded_audio = st.audio_input("Record Micro-CE Reflection", key=f"ce_rec_{learner_id}")
         if recorded_audio:
             audio_bytes = recorded_audio.read()
-            st.success("✅ Audio recorded successfully!")
 
     with audio_tabs[1]:
         uploaded_audio = st.file_uploader("Upload an audio file (.wav, .mp3, .m4a)", type=["wav", "mp3", "m4a"], key=f"ce_upload_{learner_id}")
@@ -1037,30 +1016,94 @@ def render_ce_case_logger(learner_id):
             audio_bytes = uploaded_audio.read()
             if uploaded_audio.name.endswith(".mp3"): audio_mime = "audio/mp3"
             elif uploaded_audio.name.endswith(".m4a"): audio_mime = "audio/mp4"
-            st.success("✅ Audio file uploaded successfully!")
 
+    # 2. AI PROCESSING & CLASSIFICATION
     if audio_bytes:
         st.write("---")
-        col_playback, col_actions = st.columns([1, 1])
-        with col_playback:
-            st.audio(audio_bytes, format=audio_mime)
-        with col_actions:
-            st.download_button(label="📥 Download Audio File", data=audio_bytes, file_name=f"clinical_dictation_ce.{audio_mime.split('/')[-1]}", mime=audio_mime, use_container_width=True)
-            if st.button("✨ Send to Gemini for Transcription", type="primary", use_container_width=True, key=f"btn_transcribe_ce_{learner_id}"):
-                status_placeholder = st.empty()
-                with status_placeholder.container():
-                    st.info("🧠 Gemini is analyzing clinical audio... Please wait.")
-                    st.progress(50)
-                with st.spinner("Processing..."):
-                    transcript = transcribe_clinical_audio(audio_bytes, mime_type=audio_mime)
-                    if transcript:
-                        st.session_state[text_key] = transcript
-                        status_placeholder.success("✅ Transcription complete! Review below.")
+        if st.button("✨ Process & Claim Micro-CE", type="primary", use_container_width=True, key=f"btn_transcribe_ce_{learner_id}"):
+            status_placeholder = st.empty()
+            with status_placeholder.container():
+                st.info("🧠 Gemini is analyzing your reflection against the ABCGTBIO Standards... Please wait.")
+                st.progress(50)
+            
+            with st.spinner("Processing..."):
+                transcript = transcribe_clinical_audio(audio_bytes, mime_type=audio_mime)
+                
+                if transcript:
+                    st.session_state[text_key] = transcript
+                    
+                    # Run deterministic match against the Curriculum Rubric
+                    matcher = RxBricksScribeMatcher(curriculum_df) 
+                    proven_bricks = matcher.analyze_transcript(transcript)
+                    
+                    # Generate the Self-Directed AI Classification
+                    ai_result = generate_ai_evaluation(
+                        raw_dictation=f"[Self-Directed CE Reflection]\n\n{transcript}", 
+                        learner_name=learner_dict.get(learner_id, learner_id), 
+                        config=active_config,
+                        available_topics=topics,
+                        proven_bricks=proven_bricks
+                    )
+                    
+                    if ai_result:
+                        st.session_state.ce_draft = ai_result
+                        status_placeholder.success("✅ Micro-CE successfully mapped! Review and save below.")
                         st.rerun()
-                    else:
-                        status_placeholder.error("❌ Transcription failed. Check API key or audio format.")
+                else:
+                    status_placeholder.error("❌ Transcription failed.")
 
-    st.text_area("Review & Edit Your Case Notes", height=100, key=text_key)
+    # 3. REVIEW & SAVE LOGIC
+    if "ce_draft" in st.session_state and st.session_state.ce_draft:
+        draft = st.session_state.ce_draft
+        st.divider()
+        
+        st.markdown("**Your Raw Voice Journal**")
+        st.text_area("Hidden Label", height=100, key=text_key, label_visibility="collapsed")
+        
+        st.subheader("📋 Curriculum Mapping")
+        st.caption("Gemini has routed your reflection to these specific ABCGTBIO standards.")
+        
+        col_c, col_d = st.columns(2)
+        with col_c:
+            safe_rot = draft.get("InferredRotation", eval_set.get("rotations", ["Independent Study"])[0])
+            if safe_rot not in eval_set.get("rotations", []): safe_rot = eval_set.get("rotations", ["Independent Study"])[0]
+            final_rot = st.selectbox("Category", eval_set.get("rotations", ["Independent Study"]), index=eval_set.get("rotations", ["Independent Study"]).index(safe_rot), key=f"cerot_{learner_id}")
+            
+            safe_obj = draft.get("InferredObjective", topics[0] if topics else "Unknown")
+            if safe_obj not in topics: topics.insert(0, safe_obj)
+            final_obj = st.selectbox("Target Concept / EPA", topics, index=topics.index(safe_obj), key=f"ceobj_{learner_id}")
+
+        with col_d:
+            # Default to "Meets Expectations" or equivalent passing grade for a completed CE
+            safe_grade = "Meets Expectations" if "Meets Expectations" in eval_set.get("grading_scale", []) else eval_set.get("grading_scale", ["Complete"])[-1]
+            if safe_grade not in eval_set.get("grading_scale", []): safe_grade = eval_set.get("grading_scale", ["Complete"])[0]
+            final_grade = st.selectbox("Self-Assessed Mastery", eval_set.get("grading_scale", ["Complete"]), index=eval_set.get("grading_scale", ["Complete"]).index(safe_grade), key=f"ceg_{learner_id}")
+            
+            final_interaction = st.selectbox("Interaction Type", ["Clinical Application", "Literature Review", "Peer Discussion", "Self-Study"], key=f"ceint_{learner_id}")
+            
+        final_comment = st.text_input("Key Takeaway", value=draft.get("Comment", ""), key=f"cec_{learner_id}")
+        final_narrative = st.text_area("AI Synthesis", value=draft.get("Narrative", ""), height=120, key=f"cen_{learner_id}")
+        
+        if st.button("💾 Log Micro-CE to Profile", type="primary", key=f"save_ce_{learner_id}", use_container_width=True):
+            with st.spinner("Locking in your CE credit..."):
+                # Logs the entry using "Self-Directed" instead of a Preceptor name
+                success = log_evaluation_to_sheet(
+                    preceptor="Self-Directed CE", 
+                    resident=learner_id,  
+                    rotation=final_rot,
+                    objective=final_obj,
+                    criteria=final_interaction,
+                    grade=final_grade,
+                    comment=final_comment,
+                    action_plan=draft.get("ActionPlan", ""),
+                    narrative=st.session_state[text_key],
+                    ai_quality_grade=draft.get("QualityGrade", "Green"),
+                    pharmacademic_text=final_narrative
+                )
+                if success:
+                    st.balloons()
+                    st.success("🎉 Micro-CE Logged! Your Performance Dashboard has been updated.")
+                    st.session_state.ce_draft = None
 
     # --- AI TRIGGER ---
     if st.button("✨ Evaluate Mission & Generate CE Lesson", type="primary", use_container_width=True):
