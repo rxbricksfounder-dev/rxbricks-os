@@ -1177,7 +1177,7 @@ def render_ce_case_logger(learner_id):
                 if success:
                     st.balloons()
                     st.session_state.ce_draft = None
-                    st.session_state[text_key] = ""
+                    del st.session_state[text_key]  # <--- Safely deletes the text
                     st.session_state.current_ce_lesson = None
                     st.session_state[f"audio_key_ce_{learner_id}"] = st.session_state.get(f"audio_key_ce_{learner_id}", 0) + 1
                     st.session_state[success_key] = True
@@ -1238,7 +1238,7 @@ def render_ce_case_logger(learner_id):
                         narrative=st.session_state[text_key]
                     )
                     st.session_state.ce_draft = None
-                    st.session_state[text_key] = ""
+                    del st.session_state[text_key]  # <--- Safely deletes the text
                     st.session_state.current_ce_lesson = None
                     st.session_state[f"audio_key_ce_{learner_id}"] = st.session_state.get(f"audio_key_ce_{learner_id}", 0) + 1
                     st.session_state[success_key] = True
@@ -1550,7 +1550,7 @@ def render_learner_voice_journal(resident_id, active_config, eval_set):
                 if success:
                     st.balloons()
                     st.session_state.self_eval_draft = None
-                    st.session_state[text_key] = ""
+                    del st.session_state[text_key]  # <--- Safely deletes the text
                     st.session_state[f"audio_key_self_{resident_id}"] = st.session_state.get(f"audio_key_self_{resident_id}", 0) + 1
                     st.session_state[success_key] = True
                     st.rerun()
@@ -1739,7 +1739,7 @@ def render_evaluation_tool():
                 if success:
                     st.balloons()
                     st.session_state.eval_draft = None
-                    st.session_state[text_key] = ""
+                    del st.session_state[text_key]  # <--- Deletes the text instead of emptying it
                     st.session_state[f"audio_key_eval_{target_res_id}"] = st.session_state.get(f"audio_key_eval_{target_res_id}", 0) + 1
                     st.session_state[success_key] = True
                     st.rerun()
