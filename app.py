@@ -446,6 +446,34 @@ def generate_preceptor_prime(learner_name, recent_evals_df):
     except Exception as e:
         return f"Ready to evaluate {learner_name}."
 
+def generate_learner_prime(learner_name, schedule_context, recent_evals_text):
+    """Generates a dynamic Daily Mission prompt for the learner's voice journal."""
+    model = get_gemini_model()
+    if not model: return "Focus on establishing your clinical workflow today, and record any significant patient interventions."
+    
+    prompt = f"""
+    You are an expert Clinical Coaching AI acting as a mentor for a pharmacy resident/student, {learner_name}.
+    They are about to start their shift or study session.
+    
+    Your goal is to give them a specific "Daily Mission" to focus on and later dictate into their clinical voice journal.
+    
+    1. Acknowledge what they are scheduled for today OR acknowledge a recent area of growth based on their past feedback.
+    2. Give them a highly specific prompt on what clinical behavior, task-switching, or patient interaction to focus on and record today.
+    
+    Constraints:
+    - MAXIMUM of 2 sentences.
+    - Tone should be motivational, highly actionable, and focused on clinical mastery.
+    - Do not sound robotic; sound like a seasoned, encouraging preceptor.
+    
+    Today's Schedule/Focus: {schedule_context}
+    Recent Feedback Context: {recent_evals_text}
+    """
+    try:
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return "Keep an eye out for complex clinical scenarios today, and record your thought process on any major interventions."
+
 def generate_ai_evaluation(raw_dictation, learner_name, config, available_topics, proven_bricks=None):
     model = get_gemini_model()
     if not model: return None
@@ -1347,29 +1375,63 @@ def render_learner_dashboard(learner_id, config):
 def render_learner_voice_journal(resident_id, active_config, eval_set):
     """A dedicated Voice-to-PharmAcademic tool for Resident Self-Reflection."""
     
-    st.subheader("🎙️ Clinical Voice Journal")
+    # 1. CLEAN APP HEADER FOR LEARNER
     st.markdown("""
-    **Self-Reflection & Objective Mapping**
-    Dictate a clinical scenario, topic review, or case presentation. Describe your thought process and interventions. The AI will map your actions to your rotation objectives.
-    """)
-    st.write("---")
+        <style>
+        .main .block-container { max-width: 500px; margin: 0 auto; }
+        [data-testid="stAudioInput"] { transform: scale(1.1); margin-top: 15px; margin-bottom: 15px; }
+        </style>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("<h2 style='text-align: center; color: #1E1E1E;'>🎙️ Clinical Voice Journal</h2>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #666; font-size: 15px; margin-top: -10px;'>Dictate your clinical thought process</p>", unsafe_allow_html=True)
 
-    # 1. NEW: ROTATION, OBJECTIVE, AND INTERACTION TYPE
+    # ==========================================
+    # NEW: LEARNER DAILY MISSION INJECTION
+    # ==========================================
+    prime_state_key = f"learner_prime_{resident_id}_{datetime.now().strftime('%Y%m%d')}"
+    
+    if prime_state_key not in st.session_state:
+        with st.spinner("🤖 Booting Daily Mission Brief..."):
+            # A. Get Recent Evaluations Context
+            live_df = get_evaluation_log(active_sheet_name)
+            my_evals = get_recent_evals(live_df, active_config, resident_id, days=14).head(3)
+            evals_text = "No recent evaluations on file."
+            if not my_evals.empty:
+                # Safely extract the objective and grade column data
+                eval_col = active_config.get('evaluation_column', 'ASHP Objective')
+                evals_text = ", ".join([f"{row.get(eval_col, 'Task')} ({row.get('Grade', 'N/A')})" for _, row in my_evals.iterrows()])
+            
+            # B. Get Schedule Context
+            today_sched = get_todays_schedule(resident_id)
+            sched_text = "Standard clinical workflow."
+            if not today_sched.empty and 'Subject' in today_sched.columns:
+                sched_text = ", ".join(today_sched['Subject'].dropna().astype(str).tolist())
+                
+            learner_name = learner_dict.get(resident_id, resident_id)
+            st.session_state[prime_state_key] = generate_learner_prime(learner_name, sched_text, evals_text)
+
+    # Display the Daily Mission Briefing right above the microphone
+    st.markdown(f"""
+        <div style="background-color: #f3e5f5; border-left: 5px solid #9c27b0; padding: 15px; border-radius: 5px; margin-bottom: 20px; margin-top: 10px;">
+            <strong style="color: #9c27b0;">🎯 Your Daily Mission</strong><br>
+            <span style="color: #333; font-size: 14px;">{st.session_state[prime_state_key]}</span>
+        </div>
+    """, unsafe_allow_html=True)
+    # ==========================================
+
+    # 2. ROTATION, OBJECTIVE, AND INTERACTION TYPE
     col1, col2 = st.columns(2)
     with col1:
         selected_rotation = st.selectbox("Current Rotation", active_config.get("rotations", ["CORE - 1 - EM"]), key="self_rot") 
     with col2:
-        selected_action = st.selectbox("Target Objective", active_config.get("evaluations", ["R1.1.1 Interact effectively with health care teams"]), key="self_obj")
+        # Dynamically pull topics if available
+        available_topics = curriculum_df['Topic'].dropna().unique().tolist() if not curriculum_df.empty else ["General Clinical Action"]
+        selected_action = st.selectbox("Target Objective", available_topics, key="self_obj")
 
     interaction_type = st.selectbox(
         "Type of Interaction", 
-        [
-            "Clinical Scenario / Bedside Care", 
-            "Topic Discussion / Review", 
-            "Case Presentation", 
-            "Journal Club / Literature Review", 
-            "Project / Admin Review"
-        ],
+        ["Clinical Scenario / Bedside Care", "Topic Discussion / Review", "Case Presentation", "Journal Club / Literature Review", "Project / Admin Review"],
         key="self_interaction_type"
     )
 
@@ -1377,27 +1439,22 @@ def render_learner_voice_journal(resident_id, active_config, eval_set):
     if text_key not in st.session_state:
         st.session_state[text_key] = ""
 
-    # 2. AUDIO CAPTURE ROW
-    audio_tabs = st.tabs(["🎙️ Record Audio", "📁 Upload Audio File"])
-    
+    # 3. AUDIO CAPTURE USING NATIVE WIDGET (No tabs, clean UI)
     audio_bytes = None
     audio_mime = "audio/wav"
     
-    with audio_tabs[0]:
-        # Using Streamlit's perfectly stable, native audio widget!
-        recorded_audio = st.audio_input("Record Scenario", key=f"self_rec_{resident_id}")
-        if recorded_audio:
-            audio_bytes = recorded_audio.read()
-            st.success("✅ Audio recorded successfully!")
-
-    with audio_tabs[1]:
-        uploaded_audio = st.file_uploader("Upload an audio file (.wav, .mp3, .m4a)", type=["wav", "mp3", "m4a"], key=f"self_upload_{resident_id}")
+    recorded_audio = st.audio_input("Record Scenario", key=f"self_rec_{resident_id}")
+    if recorded_audio:
+        audio_bytes = recorded_audio.read()
+        
+    with st.expander("📁 Upload an existing audio file instead"):
+        uploaded_audio = st.file_uploader("Upload (.wav, .mp3, .m4a)", type=["wav", "mp3", "m4a"], key=f"self_upload_{resident_id}", label_visibility="collapsed")
         if uploaded_audio:
             audio_bytes = uploaded_audio.read()
             if uploaded_audio.name.endswith(".mp3"): audio_mime = "audio/mp3"
             elif uploaded_audio.name.endswith(".m4a"): audio_mime = "audio/mp4"
-            st.success("✅ Audio file uploaded successfully!")
 
+    # 4. AUDIO PROCESSING BLOCK
     if audio_bytes:
         st.write("---")
         col_playback, col_actions = st.columns([1, 1])
