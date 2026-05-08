@@ -989,23 +989,8 @@ def render_module_quiz(quiz_df, topic_name, unique_suffix=""):
         st.metric("Score", f"{score} / {len(module_questions)}")
 
 def render_ce_case_logger(learner_id):
-    # --- THE iPHONE CSS MAGIC ---
-    st.markdown("""
-        <style>
-        .main .block-container { max-width: 500px; padding-top: 2rem; padding-bottom: 5rem; margin: 0 auto; }
-        .stSelectbox label { display: none; }
-        [data-testid="stAudioInput"] { transform: scale(1.1); margin-top: 20px; margin-bottom: 20px; }
-        </style>
-    """, unsafe_allow_html=True)
-
-    # 1. CLEAN APP HEADER & INVISIBLE INSTRUCTIONS
-    st.markdown("<h1 style='text-align: center; color: #1E1E1E;'>Micro-CE Logger</h1>", unsafe_allow_html=True)
-    st.info("""
-    **🎙️ Drive-Time Challenge:**
-    Tap record and speak for 30 seconds about how you applied or understood a recent biologic, biosimilar, or CGT concept.
-    
-    *(Remember: No Patient Identifiers!)*
-    """)
+    st.subheader("🎙️ Micro-CE Voice Logger")
+    st.caption("Record a quick reflection on how you applied a biologic, biosimilar, or CGT concept in practice today. The AI will automatically map it to the curriculum and award your Micro-CE credit.")
 
     nom = active_config.get("nomenclature", {})
     eval_set = active_config.get("eval_settings", {})
@@ -1015,36 +1000,43 @@ def render_ce_case_logger(learner_id):
     if text_key not in st.session_state:
         st.session_state[text_key] = ""
 
-    # 2. MASSIVE CENTERED MICROPHONE
+    # 1. AUDIO CAPTURE USING NATIVE WIDGET
+    audio_tabs = st.tabs(["🎙️ Record Reflection", "📁 Upload Audio File"])
     audio_bytes = None
     audio_mime = "audio/wav"
     
-    recorded_audio = st.audio_input("Record", key=f"ce_rec_{learner_id}")
-    if recorded_audio:
-        audio_bytes = recorded_audio.read()
+    with audio_tabs[0]:
+        recorded_audio = st.audio_input("Record Micro-CE Reflection", key=f"ce_rec_{learner_id}")
+        if recorded_audio:
+            audio_bytes = recorded_audio.read()
 
-    with st.expander("📁 Upload an existing audio file instead"):
-        uploaded_audio = st.file_uploader("Upload (.wav, .mp3, .m4a)", type=["wav", "mp3", "m4a"], key=f"ce_upload_{learner_id}", label_visibility="collapsed")
+    with audio_tabs[1]:
+        uploaded_audio = st.file_uploader("Upload an audio file (.wav, .mp3, .m4a)", type=["wav", "mp3", "m4a"], key=f"ce_upload_{learner_id}")
         if uploaded_audio:
             audio_bytes = uploaded_audio.read()
             if uploaded_audio.name.endswith(".mp3"): audio_mime = "audio/mp3"
             elif uploaded_audio.name.endswith(".m4a"): audio_mime = "audio/mp4"
 
-    # 3. PROCESS BUTTON (This is the ONLY Primary/Red button)
+    # 2. AI PROCESSING & CLASSIFICATION
     if audio_bytes:
         st.write("---")
-        if st.button("✨ Process Audio", type="primary", use_container_width=True, key=f"btn_transcribe_ce_{learner_id}"):
+        if st.button("✨ Process & Claim Micro-CE", type="primary", use_container_width=True, key=f"btn_transcribe_ce_{learner_id}"):
             status_placeholder = st.empty()
             with status_placeholder.container():
-                st.info("🧠 Gemini is analyzing your reflection... Please wait.")
+                st.info("🧠 Gemini is analyzing your reflection against the ABCGTBIO Standards... Please wait.")
                 st.progress(50)
             
             with st.spinner("Processing..."):
                 transcript = transcribe_clinical_audio(audio_bytes, mime_type=audio_mime)
+                
                 if transcript:
                     st.session_state[text_key] = transcript
+                    
+                    # Run deterministic match against the Curriculum Rubric
                     matcher = RxBricksScribeMatcher(curriculum_df) 
                     proven_bricks = matcher.analyze_transcript(transcript)
+                    
+                    # Generate the Self-Directed AI Classification
                     ai_result = generate_ai_evaluation(
                         raw_dictation=f"[Self-Directed CE Reflection]\n\n{transcript}", 
                         learner_name=learner_dict.get(learner_id, learner_id), 
@@ -1052,6 +1044,7 @@ def render_ce_case_logger(learner_id):
                         available_topics=topics,
                         proven_bricks=proven_bricks
                     )
+                    
                     if ai_result:
                         st.session_state.ce_draft = ai_result
                         status_placeholder.success("✅ Micro-CE successfully mapped! Review and save below.")
@@ -1059,15 +1052,16 @@ def render_ce_case_logger(learner_id):
                 else:
                     status_placeholder.error("❌ Transcription failed.")
 
-    # 4. REVIEW & SAVE LOGIC
+    # 3. REVIEW & SAVE LOGIC
     if "ce_draft" in st.session_state and st.session_state.ce_draft:
         draft = st.session_state.ce_draft
         st.divider()
         
         st.markdown("**Your Raw Voice Journal**")
-        st.text_area("Hidden Label", height=80, key=text_key, label_visibility="collapsed")
+        st.text_area("Hidden Label", height=100, key=text_key, label_visibility="collapsed")
         
-        st.markdown("<p style='text-align: center; color: #666; font-size: 14px;'>📋 AI-Inferred Routing</p>", unsafe_allow_html=True)
+        st.subheader("📋 Curriculum Mapping")
+        st.caption("Gemini has routed your reflection to these specific ABCGTBIO standards.")
         
         col_c, col_d = st.columns(2)
         with col_c:
@@ -1080,21 +1074,19 @@ def render_ce_case_logger(learner_id):
             final_obj = st.selectbox("Target Concept / EPA", topics, index=topics.index(safe_obj), key=f"ceobj_{learner_id}")
 
         with col_d:
+            # Default to "Meets Expectations" or equivalent passing grade for a completed CE
             safe_grade = "Meets Expectations" if "Meets Expectations" in eval_set.get("grading_scale", []) else eval_set.get("grading_scale", ["Complete"])[-1]
             if safe_grade not in eval_set.get("grading_scale", []): safe_grade = eval_set.get("grading_scale", ["Complete"])[0]
             final_grade = st.selectbox("Self-Assessed Mastery", eval_set.get("grading_scale", ["Complete"]), index=eval_set.get("grading_scale", ["Complete"]).index(safe_grade), key=f"ceg_{learner_id}")
             
-            interaction_opts = ["Clinical Application", "Literature Review", "Peer Discussion", "Self-Study"]
-            safe_int = draft.get("InferredInteraction", interaction_opts[0])
-            if safe_int not in interaction_opts: safe_int = interaction_opts[0]
-            final_interaction = st.selectbox("Interaction Type", interaction_opts, index=interaction_opts.index(safe_int), key=f"ceint_{learner_id}")
+            final_interaction = st.selectbox("Interaction Type", ["Clinical Application", "Literature Review", "Peer Discussion", "Self-Study"], key=f"ceint_{learner_id}")
             
         final_comment = st.text_input("Key Takeaway", value=draft.get("Comment", ""), key=f"cec_{learner_id}")
-        final_narrative = st.text_area("AI Synthesis", value=draft.get("Narrative", ""), height=100, key=f"cen_{learner_id}")
+        final_narrative = st.text_area("AI Synthesis", value=draft.get("Narrative", ""), height=120, key=f"cen_{learner_id}")
         
-        # NOTE: This button is no longer "type='primary'". It will display as a neutral/gray secondary button!
-        if st.button("💾 Confirmed: Log Micro-CE", key=f"save_ce_{learner_id}", use_container_width=True):
+        if st.button("💾 Log Micro-CE to Profile", type="primary", key=f"save_ce_{learner_id}", use_container_width=True):
             with st.spinner("Locking in your CE credit..."):
+                # Logs the entry using "Self-Directed" instead of a Preceptor name
                 success = log_evaluation_to_sheet(
                     preceptor="Self-Directed CE", 
                     resident=learner_id,  
@@ -1475,17 +1467,10 @@ def render_evaluation_tool():
     eval_set = active_config["eval_settings"]
     topics = curriculum_df['Topic'].dropna().unique().tolist() if not curriculum_df.empty else ["No Curriculum Loaded"]
 
-    # 1. CLEAN APP HEADER & INVISIBLE INSTRUCTIONS
+    # 1. CLEAN APP HEADER
     st.markdown("<h1 style='text-align: center; color: #1E1E1E;'>RxBricks</h1>", unsafe_allow_html=True)
-    
-    st.info("""
-    **🎙️ How to use the Zero-Click Scribe:**
-    Tap record and simply finish this sentence (Remember: No Patient Names!):
-    *"Today, my learner managed..."*
-    
-    **(e.g., "...a 45-year-old male in DKA. They correctly calculated the fluid deficit but missed the potassium cutoff.")*
-    """)
-    
+    st.markdown("<p style='text-align: center; color: #666; font-size: 16px; margin-top: -15px;'>Who are you coaching today?</p>", unsafe_allow_html=True)
+
     # 2. RESIDENT SELECTOR (Clean and centered)
     target_res_id = st.selectbox(
         "Select Learner", 
@@ -1897,7 +1882,7 @@ if user_role == "admin":
     st.title(f"📈 {nom['director']} Dashboard")
     
     # WE SWAPPED THE FIRST TWO TABS HERE
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["👨‍🏫 Submit Evaluation", "📊 Reports & Progress", "📅 Daily Operations", "📋 Assignment Tracker", "🎓 Academic Records", "📤 PharmAcademic Export", "📝 Admin & Accreditation"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["👨‍🏫 Submit Evaluation", "📊 Reports & Progress", "📅 Daily Operations", "📋 Assignment Tracker", "🎓 Academic Records", "📝 Admin & Accreditation"])
     
     # TAB 1 IS NOW THE VOICE SCRIBE
     with tab1:
@@ -2042,55 +2027,6 @@ if user_role == "admin":
             render_resident_profile(target_res_id, is_preceptor_view=True)
             
     with tab6:
-        st.subheader("📤 Official Evaluation Export Hub")
-        st.caption("Filter recent AI-scribed evaluations and copy them directly into your official compliance portals.")
-        
-        raw_evals = get_evaluation_log(active_sheet_name)
-        if not raw_evals.empty:
-            raw_evals['Timestamp'] = pd.to_datetime(raw_evals['Timestamp'], errors='coerce')
-            raw_evals = raw_evals.sort_values(by='Timestamp', ascending=False)
-            
-            col_f1, col_f2 = st.columns(2)
-            with col_f1:
-                res_col = active_config.get("learner_column", "Resident Name")
-                if res_col not in raw_evals.columns: res_col = "Learner Name" # Fallback
-                filter_res = st.selectbox("Filter by Learner", ["All"] + list(raw_evals[res_col].dropna().unique()))
-            with col_f2:
-                filter_preceptor = st.selectbox("Filter by Preceptor", ["All"] + list(raw_evals['Preceptor Name'].dropna().unique()))
-            
-            filtered_evals = raw_evals.copy()
-            if filter_res != "All":
-                filtered_evals = filtered_evals[filtered_evals[res_col] == filter_res]
-            if filter_preceptor != "All":
-                filtered_evals = filtered_evals[filtered_evals['Preceptor Name'] == filter_preceptor]
-                
-            st.divider()
-            
-            for idx, row in filtered_evals.iterrows():
-                date_str = row['Timestamp'].strftime('%b %d, %Y') if pd.notna(row['Timestamp']) else "Unknown Date"
-                learner_name = row.get(res_col, 'Unknown')
-                preceptor_name = row.get('Preceptor Name', 'Unknown')
-                
-                with st.expander(f"📄 {date_str} | {learner_name} (Evaluator: {preceptor_name})"):
-                    st.markdown(f"**Mapped Objective / Topic:** {row.get('ASHP Objective', row.get('Course Module', 'N/A'))}")
-                    st.markdown(f"**Grade Assigned:** `{row.get('Grade', 'N/A')}`")
-                    st.write("---")
-                    st.markdown("**Official Narrative (Copy & Paste):**")
-                    
-                    final_text = row.get('PharmAcademic_Final_Text', row.get('University_Evaluation_Text', row.get('Overall Narrative', 'No narrative saved.')))
-                    st.code(final_text, language="markdown")
-                    
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        st.markdown("**Action Plan:**")
-                        st.info(row.get('Action Plan', 'None provided.'))
-                    with col_b:
-                        st.markdown("**Preceptor's Raw Comment:**")
-                        st.warning(row.get('Objective Comment', 'None provided.'))
-        else:
-            st.info("No evaluations have been logged yet.")
-    
-    with tab7:
         st.header("📝 AI Document & Accreditation Engine")
         st.caption(f"Instantly generate formatted {nom['committee_short']} meeting minutes and formal {nom['accreditation']} progress reports from shorthand notes.")
         
@@ -2242,22 +2178,13 @@ elif user_role == "learner":
     render_step_tracker(logged_in_id)
     st.write("---")
     
+    # NEW TAB ORDER: Performance Dashboard is now Front and Center!
     if selected_env_key == "ABCGTBIO":
-        # Swapped Tab 1 and Tab 2 so the Microphone is first
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎙️ Earn CE Credit", "🚀 Performance Dashboard", "🎯 Today's Plan", "📚 Curriculum Library", "🎓 Profile & CV"])
-        
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🚀 Performance Dashboard", "🎙️ Earn CE Credit", "🎯 Today's Plan", "📚 Curriculum Library", "🎓 Profile & CV"])
         with tab1:
-            render_ce_case_logger(logged_in_id)
-        with tab2:
             render_learner_dashboard(logged_in_id, active_config)
-        with tab3:
-            st.info("Today's study plan is empty. Generate a personalized schedule!")
-        with tab4:
-            render_curriculum(user_role, user_tier)
-        with tab5:
-            # FIX: Replaced the broken function with a safe placeholder
-            st.info("🎓 Profile & CV feature is currently in development.")
-                
+        with tab2:
+            render_ce_case_logger(logged_in_id)
     else:
         # Standard display for EM and APPE learners
         tab1, tab2, tab3, tab4, tab5 = st.tabs(["🚀 Performance Dashboard", "🎙️ Clinical Voice Journal", "🎯 Today's Plan", "📚 Curriculum Library", "🎓 Profile & CV"])
