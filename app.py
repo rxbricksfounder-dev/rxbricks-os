@@ -2242,9 +2242,10 @@ elif user_role == "learner":
     render_step_tracker(logged_in_id)
     st.write("---")
     
-    # NEW TAB ORDER: Earn CE Credit is now Front and Center!
     if selected_env_key == "ABCGTBIO":
+        # Swapped Tab 1 and Tab 2 so the Microphone is first
         tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎙️ Earn CE Credit", "🚀 Performance Dashboard", "🎯 Today's Plan", "📚 Curriculum Library", "🎓 Profile & CV"])
+        
         with tab1:
             render_ce_case_logger(logged_in_id)
         with tab2:
@@ -2254,7 +2255,8 @@ elif user_role == "learner":
         with tab4:
             render_curriculum(user_role, user_tier)
         with tab5:
-            render_portfolio(logged_in_id)
+            # FIX: Replaced the broken function with a safe placeholder
+            st.info("🎓 Profile & CV feature is currently in development.")
                 
     else:
         # Standard display for EM and APPE learners
