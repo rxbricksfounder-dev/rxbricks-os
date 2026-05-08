@@ -1467,10 +1467,17 @@ def render_evaluation_tool():
     eval_set = active_config["eval_settings"]
     topics = curriculum_df['Topic'].dropna().unique().tolist() if not curriculum_df.empty else ["No Curriculum Loaded"]
 
-    # 1. CLEAN APP HEADER
+    # 1. CLEAN APP HEADER & INVISIBLE INSTRUCTIONS
     st.markdown("<h1 style='text-align: center; color: #1E1E1E;'>RxBricks</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align: center; color: #666; font-size: 16px; margin-top: -15px;'>Who are you coaching today?</p>", unsafe_allow_html=True)
-
+    
+    st.info("""
+    **🎙️ How to use the Zero-Click Scribe:**
+    Tap record and simply finish this sentence (Remember: No Patient Names!):
+    *"Today, my learner managed..."*
+    
+    **(e.g., "...a 45-year-old male in DKA. They correctly calculated the fluid deficit but missed the potassium cutoff.")*
+    """)
+    
     # 2. RESIDENT SELECTOR (Clean and centered)
     target_res_id = st.selectbox(
         "Select Learner", 
@@ -1882,7 +1889,7 @@ if user_role == "admin":
     st.title(f"📈 {nom['director']} Dashboard")
     
     # WE SWAPPED THE FIRST TWO TABS HERE
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["👨‍🏫 Submit Evaluation", "📊 Reports & Progress", "📅 Daily Operations", "📋 Assignment Tracker", "🎓 Academic Records", "📝 Admin & Accreditation"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["👨‍🏫 Submit Evaluation", "📊 Reports & Progress", "📅 Daily Operations", "📋 Assignment Tracker", "🎓 Academic Records", "📤 PharmAcademic Export", "📝 Admin & Accreditation"])
     
     # TAB 1 IS NOW THE VOICE SCRIBE
     with tab1:
@@ -2027,6 +2034,55 @@ if user_role == "admin":
             render_resident_profile(target_res_id, is_preceptor_view=True)
             
     with tab6:
+        st.subheader("📤 Official Evaluation Export Hub")
+        st.caption("Filter recent AI-scribed evaluations and copy them directly into your official compliance portals.")
+        
+        raw_evals = get_evaluation_log(active_sheet_name)
+        if not raw_evals.empty:
+            raw_evals['Timestamp'] = pd.to_datetime(raw_evals['Timestamp'], errors='coerce')
+            raw_evals = raw_evals.sort_values(by='Timestamp', ascending=False)
+            
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                res_col = active_config.get("learner_column", "Resident Name")
+                if res_col not in raw_evals.columns: res_col = "Learner Name" # Fallback
+                filter_res = st.selectbox("Filter by Learner", ["All"] + list(raw_evals[res_col].dropna().unique()))
+            with col_f2:
+                filter_preceptor = st.selectbox("Filter by Preceptor", ["All"] + list(raw_evals['Preceptor Name'].dropna().unique()))
+            
+            filtered_evals = raw_evals.copy()
+            if filter_res != "All":
+                filtered_evals = filtered_evals[filtered_evals[res_col] == filter_res]
+            if filter_preceptor != "All":
+                filtered_evals = filtered_evals[filtered_evals['Preceptor Name'] == filter_preceptor]
+                
+            st.divider()
+            
+            for idx, row in filtered_evals.iterrows():
+                date_str = row['Timestamp'].strftime('%b %d, %Y') if pd.notna(row['Timestamp']) else "Unknown Date"
+                learner_name = row.get(res_col, 'Unknown')
+                preceptor_name = row.get('Preceptor Name', 'Unknown')
+                
+                with st.expander(f"📄 {date_str} | {learner_name} (Evaluator: {preceptor_name})"):
+                    st.markdown(f"**Mapped Objective / Topic:** {row.get('ASHP Objective', row.get('Course Module', 'N/A'))}")
+                    st.markdown(f"**Grade Assigned:** `{row.get('Grade', 'N/A')}`")
+                    st.write("---")
+                    st.markdown("**Official Narrative (Copy & Paste):**")
+                    
+                    final_text = row.get('PharmAcademic_Final_Text', row.get('University_Evaluation_Text', row.get('Overall Narrative', 'No narrative saved.')))
+                    st.code(final_text, language="markdown")
+                    
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        st.markdown("**Action Plan:**")
+                        st.info(row.get('Action Plan', 'None provided.'))
+                    with col_b:
+                        st.markdown("**Preceptor's Raw Comment:**")
+                        st.warning(row.get('Objective Comment', 'None provided.'))
+        else:
+            st.info("No evaluations have been logged yet.")
+    
+    with tab7:
         st.header("📝 AI Document & Accreditation Engine")
         st.caption(f"Instantly generate formatted {nom['committee_short']} meeting minutes and formal {nom['accreditation']} progress reports from shorthand notes.")
         
