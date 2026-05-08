@@ -1420,20 +1420,11 @@ def render_learner_voice_journal(resident_id, active_config, eval_set):
     """, unsafe_allow_html=True)
     # ==========================================
 
-    # 2. ROTATION, OBJECTIVE, AND INTERACTION TYPE
-    col1, col2 = st.columns(2)
-    with col1:
-        selected_rotation = st.selectbox("Current Rotation", active_config.get("rotations", ["CORE - 1 - EM"]), key="self_rot") 
-    with col2:
-        # Dynamically pull topics if available
-        available_topics = curriculum_df['Topic'].dropna().unique().tolist() if not curriculum_df.empty else ["General Clinical Action"]
-        selected_action = st.selectbox("Target Objective", available_topics, key="self_obj")
-
-    interaction_type = st.selectbox(
-        "Type of Interaction", 
-        ["Clinical Scenario / Bedside Care", "Topic Discussion / Review", "Case Presentation", "Journal Club / Literature Review", "Project / Admin Review"],
-        key="self_interaction_type"
-    )
+    # 2. BACKGROUND VARIABLES (UI dropdowns removed for simplicity)
+    # These hold placeholder values until the AI infers the real ones from the CSV
+    selected_rotation = "Pending AI Mapping"
+    selected_action = "Pending AI Mapping"
+    interaction_type = "Clinical Voice Journal"
 
     text_key = f"self_dictation_text_{resident_id}"
     if text_key not in st.session_state:
@@ -1480,23 +1471,21 @@ def render_learner_voice_journal(resident_id, active_config, eval_set):
     st.markdown("**Review & Edit Your Scenario**")
     st.text_area("Hidden Label", height=150, key=text_key, label_visibility="collapsed")
 
-    # 4. AI MAPPING ENGINE
+    # 4. AI MAPPING ENGINE (Auto-pulls from CSV)
     if st.button("✨ Map My Scenario to Objectives", type="primary", use_container_width=True, key="self_map_btn"):
         if len(st.session_state[text_key]) < 5:
             st.warning("Please record your scenario first!")
         else:
-            with st.spinner(f"AI Coach is analyzing this {interaction_type.split('/')[0]}..."):
-                
-                # Context Enrichment for the Learner
-                enriched_dictation = f"[Interaction Type: {interaction_type}]\n\n{st.session_state[text_key]}"
+            with st.spinner("AI Coach is analyzing your scenario..."):
+                # Dynamically pull the CSV objectives here so Gemini knows what to map it to
+                available_topics = curriculum_df['Topic'].dropna().unique().tolist() if not curriculum_df.empty else ["General Clinical Action"]
+                learner_name = learner_dict.get(resident_id, resident_id)
                 
                 ai_result = generate_ai_evaluation(
-                    enriched_dictation, 
-                    resident_id, 
-                    selected_rotation, 
-                    selected_action, 
-                    "Self-Evaluation", 
-                    active_config
+                    raw_dictation=st.session_state[text_key], 
+                    learner_name=learner_name, 
+                    config=active_config,
+                    available_topics=available_topics
                 )
                 if ai_result:
                     st.session_state.self_eval_draft = ai_result
@@ -1508,6 +1497,10 @@ def render_learner_voice_journal(resident_id, active_config, eval_set):
         st.success("✅ Scenario Mapped Successfully!")
         
         st.subheader("PharmAcademic Self-Evaluation Draft")
+        
+        # Show the user what the AI inferred
+        st.info(f"**Mapped Objective:** {draft.get('InferredObjective', 'Unknown')}\n\n**Mapped Rotation:** {draft.get('InferredRotation', 'Unknown')}")
+        
         final_narrative = st.text_area("AI-Generated PharmAcademic Narrative", value=draft.get("Narrative", ""), height=150, key="self_narrative")
         action_plan = st.text_area("Your Action Plan for Next Time", value=draft.get("ActionPlan", ""), height=80, key="self_action")
         
@@ -1516,9 +1509,9 @@ def render_learner_voice_journal(resident_id, active_config, eval_set):
                 success = log_evaluation_to_sheet(
                     preceptor="SELF-REFLECTION", 
                     resident=resident_id,  
-                    rotation=selected_rotation,
-                    objective=selected_action,
-                    criteria=interaction_type, # <--- SAVES THE SPECIFIC INTERACTION TYPE
+                    rotation=draft.get("InferredRotation", "Self-Directed"), # Uses the AI's smart choice
+                    objective=draft.get("InferredObjective", "Self-Directed"), # Uses the AI's smart choice
+                    criteria=draft.get("InferredInteraction", interaction_type), 
                     grade="Self-Assessed", 
                     comment="Submitted via Voice Journal",
                     action_plan=action_plan,
@@ -1529,7 +1522,7 @@ def render_learner_voice_journal(resident_id, active_config, eval_set):
                 if success:
                     st.success("🎉 Scenario safely logged! Your preceptor can now review it.")
                     st.session_state.self_eval_draft = None
-
+                    
 def render_evaluation_tool():
     if not learner_dict:
         st.warning("No learners found in the system.")
