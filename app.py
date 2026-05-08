@@ -407,6 +407,45 @@ def render_progress(col_target, items, working_df, eval_col):
 # 2. AI ENGINES
 # ==========================================\
 
+def generate_preceptor_prime(learner_name, recent_evals_df):
+    """Generates a dynamic Optimus-style Preceptor Prime briefing."""
+    model = get_gemini_model()
+    if not model: return "AI model unavailable."
+    
+    if recent_evals_df.empty:
+        return f"No recent evaluation data on file for {learner_name}. Focus on establishing baseline clinical competencies and workflow autonomy today."
+
+    # Extract the most recent feedback to feed the prompt
+    recent_evals_df = recent_evals_df.sort_values(by='Timestamp', ascending=False).head(4)
+    
+    context_string = ""
+    for _, row in recent_evals_df.iterrows():
+        obj = row.get('ASHP Objective', row.get('Objective', 'Clinical Action'))
+        grade = row.get('Grade', 'N/A')
+        comment = row.get('Comment', row.get('Action Plan', 'No comment.'))
+        context_string += f"- Action: {obj} | Grade: {grade} | Feedback: {comment}\n"
+
+    prompt = f"""
+    You are an expert Clinical Coaching AI known as "Preceptor Prime".
+    Review the recent clinical evaluations for the resident, {learner_name}, and create a hyper-condensed briefing.
+    
+    Your goal is to prime the attending preceptor's attention BEFORE the shift starts.
+    1. Acknowledge what the resident has recently mastered or done well.
+    2. Give the preceptor a specific, advanced clinical behavior, nuance, or "blind spot" to watch for today based on their recent feedback or logical next steps in mastery.
+    
+    Constraints:
+    - MAXIMUM of 2 sentences.
+    - Make it punchy, highly actionable, and professional.
+    
+    Recent Performance Context:
+    {context_string}
+    """
+    try:
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"Ready to evaluate {learner_name}."
+
 def generate_ai_evaluation(raw_dictation, learner_name, config, available_topics, proven_bricks=None):
     model = get_gemini_model()
     if not model: return None
@@ -1439,24 +1478,17 @@ def render_evaluation_tool():
         st.warning("No learners found in the system.")
         return
 
-    # --- THE iPHONE CSS MAGIC ---
-    # This code forces the screen to act like a sleek mobile app
     st.markdown("""
         <style>
-        /* Force a narrow, mobile-style column in the center of the screen */
         .main .block-container {
             max-width: 500px; 
             padding-top: 2rem;
             padding-bottom: 5rem;
             margin: 0 auto;
         }
-        /* Hide the ugly text labels above dropdown menus */
-        .stSelectbox label {
-            display: none; 
-        }
-        /* Make the audio uploader look like a native app widget */
+        .stSelectbox label { display: none; }
         [data-testid="stAudioInput"] {
-            transform: scale(1.1); /* Makes the button 10% larger */
+            transform: scale(1.1); 
             margin-top: 20px;
             margin-bottom: 20px;
         }
@@ -1471,7 +1503,7 @@ def render_evaluation_tool():
     st.markdown("<h1 style='text-align: center; color: #1E1E1E;'>RxBricks</h1>", unsafe_allow_html=True)
     st.markdown("<p style='text-align: center; color: #666; font-size: 16px; margin-top: -15px;'>Who are you coaching today?</p>", unsafe_allow_html=True)
 
-    # 2. RESIDENT SELECTOR (Clean and centered)
+    # 2. RESIDENT SELECTOR
     target_res_id = st.selectbox(
         "Select Learner", 
         options=list(learner_dict.keys()), 
@@ -1480,8 +1512,28 @@ def render_evaluation_tool():
     )
     current_preceptor = st.session_state.get("name", f"Unknown {nom['educator']}")
 
-    # Push the microphone down to the center of the screen
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    # ==========================================
+    # NEW: PRECEPTOR PRIME INJECTION 
+    # ==========================================
+    st.markdown("<br>", unsafe_allow_html=True)
+    prime_state_key = f"prime_{target_res_id}_{datetime.now().strftime('%Y%m%d')}"
+    
+    if prime_state_key not in st.session_state:
+        with st.spinner("🤖 Booting Preceptor Prime..."):
+            live_df = get_evaluation_log(active_sheet_name)
+            my_evals = get_recent_evals(live_df, active_config, target_res_id, days=30)
+            learner_name = learner_dict.get(target_res_id, target_res_id)
+            
+            st.session_state[prime_state_key] = generate_preceptor_prime(learner_name, my_evals)
+
+    # Display the Prime Briefing right above the microphone
+    st.markdown(f"""
+        <div style="background-color: #e3f2fd; border-left: 5px solid #1976d2; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+            <strong style="color: #1976d2;">🤖 Preceptor Prime</strong><br>
+            <span style="color: #333; font-size: 14px;">{st.session_state[prime_state_key]}</span>
+        </div>
+    """, unsafe_allow_html=True)
+    # ==========================================
 
     if 'eval_draft' not in st.session_state:
         st.session_state.eval_draft = None
