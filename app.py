@@ -1434,109 +1434,93 @@ def render_learner_voice_journal(resident_id, active_config, eval_set):
                     st.success("🎉 Scenario safely logged! Your preceptor can now review it.")
                     st.session_state.self_eval_draft = None
 
-
 def render_evaluation_tool():
     if not learner_dict:
         st.warning("No learners found in the system.")
         return
 
-    nom = active_config["nomenclature"]
-    eval_set = active_config["eval_settings"]
-
-    target_res_id = st.selectbox(
-        f"Select {nom['learner']} to Evaluate", 
-        options=list(learner_dict.keys()), 
-        format_func=lambda x: learner_dict.get(x, "Unknown"),
-        key="eval_tool_res"
-    )
-    current_preceptor = st.session_state.get("name", f"Unknown {nom['educator']}")
-    
-    render_step_tracker(target_res_id)
-    st.write("---")
-
-    if 'eval_draft' not in st.session_state:
-        st.session_state.eval_draft = None
-
-    # Dynamically pull topics from curriculum if available, else use a fallback
-    topics = curriculum_df['Topic'].dropna().unique().tolist() if not curriculum_df.empty else ["No Curriculum Loaded"]
-
-    col_a, col_b = st.columns(2)
-    with col_a:
-        # NEW: Dynamic UI labeling based on config
-        target_label = f"Target {active_config['evaluation_column'].split(' ')[-1]} / Topic"
-        
-        selected_rotation = st.selectbox("Module / Rotation", eval_set.get("rotations", ["Default"]), key=f"rot_{target_res_id}")
-        selected_action = st.selectbox(target_label, topics, key=f"act_{target_res_id}")
-        
-    with col_b:
-        zone_action = st.selectbox("Target Entrustment", eval_set.get("entrustment_scale", ["1", "2", "3", "4"]), key=f"zone_{target_res_id}")
-        
-def render_evaluation_tool():
-    if not learner_dict:
-        st.warning("No learners found in the system.")
-        return
+    # --- THE iPHONE CSS MAGIC ---
+    # This code forces the screen to act like a sleek mobile app
+    st.markdown("""
+        <style>
+        /* Force a narrow, mobile-style column in the center of the screen */
+        .main .block-container {
+            max-width: 500px; 
+            padding-top: 2rem;
+            padding-bottom: 5rem;
+            margin: 0 auto;
+        }
+        /* Hide the ugly text labels above dropdown menus */
+        .stSelectbox label {
+            display: none; 
+        }
+        /* Make the audio uploader look like a native app widget */
+        [data-testid="stAudioInput"] {
+            transform: scale(1.1); /* Makes the button 10% larger */
+            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+        </style>
+    """, unsafe_allow_html=True)
 
     nom = active_config["nomenclature"]
     eval_set = active_config["eval_settings"]
     topics = curriculum_df['Topic'].dropna().unique().tolist() if not curriculum_df.empty else ["No Curriculum Loaded"]
 
+    # 1. CLEAN APP HEADER
+    st.markdown("<h1 style='text-align: center; color: #1E1E1E;'>RxBricks</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #666; font-size: 16px; margin-top: -15px;'>Who are you coaching today?</p>", unsafe_allow_html=True)
+
+    # 2. RESIDENT SELECTOR (Clean and centered)
     target_res_id = st.selectbox(
-        f"Select {nom['learner']} to Evaluate", 
+        "Select Learner", 
         options=list(learner_dict.keys()), 
         format_func=lambda x: learner_dict.get(x, "Unknown"),
         key="eval_tool_res"
     )
     current_preceptor = st.session_state.get("name", f"Unknown {nom['educator']}")
-    
-    render_step_tracker(target_res_id)
-    st.write("---")
+
+    # Push the microphone down to the center of the screen
+    st.markdown("<br><br>", unsafe_allow_html=True)
 
     if 'eval_draft' not in st.session_state:
         st.session_state.eval_draft = None
-
-    # THE GARMIN EXPERIENCE: Straight to recording. No forms!
-    st.subheader("🎙️ Zero-Click Clinical Scribe")
-    st.caption(f"Just hit record and describe the clinical encounter. Gemini will automatically route it to the correct rotation, objective, and grade for {learner_dict.get(target_res_id, 'the resident')}.")
 
     text_key = f"dictation_text_{target_res_id}"
     if text_key not in st.session_state:
         st.session_state[text_key] = ""
 
-    audio_tabs = st.tabs(["🎙️ Record Audio", "📁 Upload Audio File"])
+    # 3. MASSIVE CENTERED MICROPHONE (No Tabs!)
     audio_bytes = None
     audio_mime = "audio/wav"
     
-    with audio_tabs[0]:
-        recorded_audio = st.audio_input("Click to Record", key=f"recorder_{target_res_id}")
-        if recorded_audio:
-            audio_bytes = recorded_audio.read()
+    # The native audio widget is perfectly centered and pill-shaped
+    recorded_audio = st.audio_input("Record", key=f"recorder_{target_res_id}")
+    if recorded_audio:
+        audio_bytes = recorded_audio.read()
 
-    with audio_tabs[1]:
-        uploaded_audio = st.file_uploader("Upload an audio file (.wav, .mp3, .m4a)", type=["wav", "mp3", "m4a"], key=f"upload_{target_res_id}")
+    # We hide the "Upload File" option in an expander so it doesn't ruin the clean UI
+    with st.expander("📁 Upload an existing audio file instead"):
+        uploaded_audio = st.file_uploader("Upload (.wav, .mp3, .m4a)", type=["wav", "mp3", "m4a"], key=f"upload_{target_res_id}", label_visibility="collapsed")
         if uploaded_audio:
             audio_bytes = uploaded_audio.read()
             if uploaded_audio.name.endswith(".mp3"): audio_mime = "audio/mp3"
             elif uploaded_audio.name.endswith(".m4a"): audio_mime = "audio/mp4"
 
+    # 4. PROCESS BUTTON
     if audio_bytes:
         st.write("---")
-        if st.button("✨ Process Audio & Generate PharmAcademic Draft", type="primary", use_container_width=True, key=f"trans_{target_res_id}"):
+        if st.button("✨ Process Audio", type="primary", use_container_width=True, key=f"trans_{target_res_id}"):
             status_placeholder = st.empty()
             with status_placeholder.container():
-                st.info("🧠 Gemini is transcribing and classifying your clinical audio... Please wait.")
+                st.info("🧠 AI is routing your clinical audio...")
                 st.progress(50)
             with st.spinner("Processing..."):
-                
-                # 1. Transcribe
                 transcript = transcribe_clinical_audio(audio_bytes, mime_type=audio_mime)
                 if transcript:
                     st.session_state[text_key] = transcript
-                    
-                    # 2. Check for Deterministic Matches (Now functioning properly with the joined Scribe_Signals!)
                     matcher = RxBricksScribeMatcher(curriculum_df) 
                     proven_bricks = matcher.analyze_transcript(transcript)
-                    
-                    # 3. Send to the Classifier AI
                     ai_result = generate_ai_evaluation(
                         raw_dictation=transcript, 
                         learner_name=learner_dict.get(target_res_id, target_res_id), 
@@ -1544,34 +1528,29 @@ def render_evaluation_tool():
                         available_topics=topics,
                         proven_bricks=proven_bricks
                     )
-                    
                     if ai_result:
                         st.session_state.eval_draft = ai_result
-                        status_placeholder.success("✅ Evaluation completely routed and generated! Review below.")
+                        status_placeholder.success("✅ Complete! Review below.")
                         st.rerun()
                 else:
                     status_placeholder.error("❌ Transcription failed.")
 
-    # DISPLAY REVIEW & SAVE LOGIC (Only shows after AI processes)
+    # 5. REVIEW & SAVE LOGIC (Hidden until the AI finishes)
     if "eval_draft" in st.session_state and st.session_state.eval_draft:
         draft = st.session_state.eval_draft
         st.divider()
         
         st.markdown("**Review & Edit Your Raw Dictation**")
-        st.text_area("Hidden Label", height=100, key=text_key, label_visibility="collapsed")
+        st.text_area("Hidden Label", height=80, key=text_key, label_visibility="collapsed")
         
         q_grade = draft.get("QualityGrade", "Green")
         if q_grade == "Red":
-            st.error(f"🔴 **AI Coach (Deficient Entry):** {draft.get('QualityFeedback')}")
+            st.error(f"🔴 **AI Coach:** {draft.get('QualityFeedback')}")
         elif q_grade == "Yellow":
-            st.warning(f"🟡 **AI Coach (Borderline Entry):** {draft.get('QualityFeedback')}")
-        else:
-            st.success(f"✅ **AI Coach (Robust Entry):** {draft.get('QualityFeedback')}")
+            st.warning(f"🟡 **AI Coach:** {draft.get('QualityFeedback')}")
 
-        st.subheader(f"📋 AI-Inferred Routing & Draft")
-        st.caption("Gemini has pre-filled these based on your audio. Tweak them if needed before saving.")
+        st.markdown("<p style='text-align: center; color: #666; font-size: 14px;'>📋 AI-Inferred Routing</p>", unsafe_allow_html=True)
         
-        # UI generated dynamically based on AI's guesses
         col_c, col_d = st.columns(2)
         with col_c:
             safe_rot = draft.get("InferredRotation", eval_set.get("rotations", ["Default"])[0])
@@ -1579,25 +1558,25 @@ def render_evaluation_tool():
             final_rot = st.selectbox("Rotation", eval_set.get("rotations", ["Default"]), index=eval_set.get("rotations", ["Default"]).index(safe_rot), key=f"frot_{target_res_id}")
             
             safe_obj = draft.get("InferredObjective", topics[0] if topics else "Unknown")
-            if safe_obj not in topics: topics.insert(0, safe_obj) # If AI hallucinates slightly, keep it in the list
-            final_obj = st.selectbox(f"Target {active_config['evaluation_column'].split(' ')[-1]}", topics, index=topics.index(safe_obj), key=f"fobj_{target_res_id}")
+            if safe_obj not in topics: topics.insert(0, safe_obj) 
+            final_obj = st.selectbox("Objective", topics, index=topics.index(safe_obj), key=f"fobj_{target_res_id}")
 
         with col_d:
             safe_grade = draft.get("InferredGrade", eval_set["grading_scale"][2] if len(eval_set["grading_scale"]) > 2 else "Pass")
             if safe_grade not in eval_set["grading_scale"]: safe_grade = eval_set["grading_scale"][0]
             final_grade = st.selectbox("Grade", eval_set["grading_scale"], index=eval_set["grading_scale"].index(safe_grade), key=f"fg_{target_res_id}")
             
-            interaction_opts = ["Clinical Scenario / Bedside Care", "Topic Discussion / Review", "Case Presentation", "Journal Club / Literature Review", "Project / Admin Review"]
+            interaction_opts = ["Clinical Scenario", "Topic Discussion", "Case Presentation", "Journal Club", "Project Review"]
             safe_int = draft.get("InferredInteraction", interaction_opts[0])
             if safe_int not in interaction_opts: safe_int = interaction_opts[0]
-            final_interaction = st.selectbox("Interaction Type", interaction_opts, index=interaction_opts.index(safe_int), key=f"fint_{target_res_id}")
+            final_interaction = st.selectbox("Interaction", interaction_opts, index=interaction_opts.index(safe_int), key=f"fint_{target_res_id}")
             
         final_comment = st.text_input("Comment", value=draft.get("Comment", ""), key=f"fc_{target_res_id}")
-        final_action = st.text_area("Action Plan", value=draft.get("ActionPlan", ""), height=80, key=f"fa_{target_res_id}")
-        final_narrative = st.text_area("Overall Narrative (Editable)", value=draft.get("Narrative", ""), height=150, key=f"fn_{target_res_id}")
+        final_action = st.text_area("Action Plan", value=draft.get("ActionPlan", ""), height=60, key=f"fa_{target_res_id}")
+        final_narrative = st.text_area("Final Narrative", value=draft.get("Narrative", ""), height=100, key=f"fn_{target_res_id}")
         
-        if st.button("💾 Confirmed: Save to Master Database", type="primary", key=f"save_{target_res_id}", use_container_width=True):
-            with st.spinner("Writing securely to Google Sheets..."):
+        if st.button("💾 Confirmed: Save to Database", type="primary", key=f"save_{target_res_id}", use_container_width=True):
+            with st.spinner("Saving securely..."):
                 success = log_evaluation_to_sheet(
                     preceptor=current_preceptor, 
                     resident=target_res_id,  
