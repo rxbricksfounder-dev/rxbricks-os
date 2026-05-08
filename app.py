@@ -2234,20 +2234,20 @@ elif user_role == "learner":
     render_step_tracker(logged_in_id)
     st.write("---")
     
-    # NEW TAB ORDER: Voice Journal / CE Credit is now Front and Center!
+    # NEW TAB ORDER: Performance Dashboard is now Front and Center!
     if selected_env_key == "ABCGTBIO":
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎙️ Earn CE Credit", "🚀 Performance Dashboard", "🎯 Today's Plan", "📚 Curriculum Library", "🎓 Profile & CV"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🚀 Performance Dashboard", "🎙️ Earn CE Credit", "🎯 Today's Plan", "📚 Curriculum Library", "🎓 Profile & CV"])
         with tab1:
-            render_ce_case_logger(logged_in_id)
-        with tab2:
             render_learner_dashboard(logged_in_id, active_config)
+        with tab2:
+            render_ce_case_logger(logged_in_id)
     else:
         # Standard display for EM and APPE learners
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🎙️ Clinical Voice Journal", "🚀 Performance Dashboard", "🎯 Today's Plan", "📚 Curriculum Library", "🎓 Profile & CV"])
+        tab1, tab2, tab3, tab4, tab5 = st.tabs(["🚀 Performance Dashboard", "🎙️ Clinical Voice Journal", "🎯 Today's Plan", "📚 Curriculum Library", "🎓 Profile & CV"])
         with tab1:
-            render_learner_voice_journal(logged_in_id, active_config, active_config.get("eval_settings", {}))
-        with tab2:
             render_learner_dashboard(logged_in_id, active_config)
+        with tab2:
+            render_learner_voice_journal(logged_in_id, active_config, active_config.get("eval_settings", {}))
         
     with tab3:
         render_daily_operations(logged_in_id, user_role)
