@@ -1067,23 +1067,31 @@ def render_ce_case_logger(learner_id):
     if text_key not in st.session_state:
         st.session_state[text_key] = ""
 
+    # --- NEW: SUCCESS & RESET BLOCK ---
+    success_key = f"success_ce_{learner_id}"
+    if st.session_state.get(success_key):
+        st.success("🎉 Micro-CE Logged! Your Performance Dashboard has been updated.")
+        if st.button("🔄 Start New Recording", use_container_width=True, type="primary", key=f"btn_new_ce_{learner_id}"):
+            st.session_state[success_key] = False
+            st.rerun()
+        return # Hide the mic until they click the button
+    
+    audio_counter = st.session_state.get(f"audio_key_ce_{learner_id}", 0)
+    # ----------------------------------
+
     # 1. AUDIO CAPTURE USING NATIVE WIDGET
     audio_tabs = st.tabs(["🎙️ Record Reflection", "📁 Upload Audio File"])
     audio_bytes = None
     audio_mime = "audio/wav"
     
     with audio_tabs[0]:
-        recorded_audio = st.audio_input("Record Micro-CE Reflection", key=f"ce_rec_{learner_id}")
+        recorded_audio = st.audio_input("Record Micro-CE Reflection", key=f"ce_rec_{learner_id}_{audio_counter}")
         if recorded_audio:
             audio_bytes = recorded_audio.read()
 
     with audio_tabs[1]:
-        uploaded_audio = st.file_uploader("Upload an audio file (.wav, .mp3, .m4a)", type=["wav", "mp3", "m4a"], key=f"ce_upload_{learner_id}")
-        if uploaded_audio:
-            audio_bytes = uploaded_audio.read()
-            if uploaded_audio.name.endswith(".mp3"): audio_mime = "audio/mp3"
-            elif uploaded_audio.name.endswith(".m4a"): audio_mime = "audio/mp4"
-
+        uploaded_audio = st.file_uploader("Upload an audio file (.wav, .mp3, .m4a)", type=["wav", "mp3", "m4a"], key=f"ce_upload_{learner_id}_{audio_counter}")
+        
     # 2. AI PROCESSING & CLASSIFICATION
     if audio_bytes:
         st.write("---")
@@ -1153,7 +1161,6 @@ def render_ce_case_logger(learner_id):
         
         if st.button("💾 Log Micro-CE to Profile", type="primary", key=f"save_ce_{learner_id}", use_container_width=True):
             with st.spinner("Locking in your CE credit..."):
-                # Logs the entry using "Self-Directed" instead of a Preceptor name
                 success = log_evaluation_to_sheet(
                     preceptor="Self-Directed CE", 
                     resident=learner_id,  
@@ -1169,9 +1176,13 @@ def render_ce_case_logger(learner_id):
                 )
                 if success:
                     st.balloons()
-                    st.success("🎉 Micro-CE Logged! Your Performance Dashboard has been updated.")
                     st.session_state.ce_draft = None
-
+                    st.session_state[text_key] = ""
+                    st.session_state.current_ce_lesson = None
+                    st.session_state[f"audio_key_ce_{learner_id}"] = st.session_state.get(f"audio_key_ce_{learner_id}", 0) + 1
+                    st.session_state[success_key] = True
+                    st.rerun()
+                    
     # --- AI TRIGGER ---
     if st.button("✨ Evaluate Mission & Generate CE Lesson", type="primary", use_container_width=True):
         if len(st.session_state[text_key]) > 10:
@@ -1214,7 +1225,6 @@ def render_ce_case_logger(learner_id):
                 
                 if score == len(lesson.get("CEQuestions", [])):
                     st.balloons()
-                    st.success("🎉 CE Credit Earned! Logging to database...")
                     # Logs the CE credit to your master evaluation database seamlessly
                     log_evaluation_to_sheet(
                         preceptor="AI-CE-System",
@@ -1227,7 +1237,13 @@ def render_ce_case_logger(learner_id):
                         action_plan="",
                         narrative=st.session_state[text_key]
                     )
-
+                    st.session_state.ce_draft = None
+                    st.session_state[text_key] = ""
+                    st.session_state.current_ce_lesson = None
+                    st.session_state[f"audio_key_ce_{learner_id}"] = st.session_state.get(f"audio_key_ce_{learner_id}", 0) + 1
+                    st.session_state[success_key] = True
+                    st.rerun()
+                    
 def render_curriculum(current_role, current_tier):
     if curriculum_df.empty:
         st.warning("Curriculum data is currently unavailable.")
@@ -1430,16 +1446,28 @@ def render_learner_voice_journal(resident_id, active_config, eval_set):
     if text_key not in st.session_state:
         st.session_state[text_key] = ""
 
+    # --- NEW: SUCCESS & RESET BLOCK ---
+    success_key = f"success_self_{resident_id}"
+    if st.session_state.get(success_key):
+        st.success("🎉 Scenario safely logged! Your preceptor can now review it.")
+        if st.button("🔄 Start New Recording", use_container_width=True, type="primary", key=f"btn_new_self_{resident_id}"):
+            st.session_state[success_key] = False
+            st.rerun()
+        return # Hide the mic until they click the button
+    
+    audio_counter = st.session_state.get(f"audio_key_self_{resident_id}", 0)
+    # ----------------------------------
+
     # 3. AUDIO CAPTURE USING NATIVE WIDGET (No tabs, clean UI)
     audio_bytes = None
     audio_mime = "audio/wav"
     
-    recorded_audio = st.audio_input("Record Scenario", key=f"self_rec_{resident_id}")
+    recorded_audio = st.audio_input("Record Scenario", key=f"self_rec_{resident_id}_{audio_counter}")
     if recorded_audio:
         audio_bytes = recorded_audio.read()
         
     with st.expander("📁 Upload an existing audio file instead"):
-        uploaded_audio = st.file_uploader("Upload (.wav, .mp3, .m4a)", type=["wav", "mp3", "m4a"], key=f"self_upload_{resident_id}", label_visibility="collapsed")
+        uploaded_audio = st.file_uploader("Upload (.wav, .mp3, .m4a)", type=["wav", "mp3", "m4a"], key=f"self_upload_{resident_id}_{audio_counter}", label_visibility="collapsed")
         if uploaded_audio:
             audio_bytes = uploaded_audio.read()
             if uploaded_audio.name.endswith(".mp3"): audio_mime = "audio/mp3"
@@ -1509,8 +1537,8 @@ def render_learner_voice_journal(resident_id, active_config, eval_set):
                 success = log_evaluation_to_sheet(
                     preceptor="SELF-REFLECTION", 
                     resident=resident_id,  
-                    rotation=draft.get("InferredRotation", "Self-Directed"), # Uses the AI's smart choice
-                    objective=draft.get("InferredObjective", "Self-Directed"), # Uses the AI's smart choice
+                    rotation=draft.get("InferredRotation", "Self-Directed"),
+                    objective=draft.get("InferredObjective", "Self-Directed"),
                     criteria=draft.get("InferredInteraction", interaction_type), 
                     grade="Self-Assessed", 
                     comment="Submitted via Voice Journal",
@@ -1520,8 +1548,12 @@ def render_learner_voice_journal(resident_id, active_config, eval_set):
                     pharmacademic_text=final_narrative
                 )
                 if success:
-                    st.success("🎉 Scenario safely logged! Your preceptor can now review it.")
+                    st.balloons()
                     st.session_state.self_eval_draft = None
+                    st.session_state[text_key] = ""
+                    st.session_state[f"audio_key_self_{resident_id}"] = st.session_state.get(f"audio_key_self_{resident_id}", 0) + 1
+                    st.session_state[success_key] = True
+                    st.rerun()
                     
 def render_evaluation_tool():
     if not learner_dict:
@@ -1592,18 +1624,30 @@ def render_evaluation_tool():
     if text_key not in st.session_state:
         st.session_state[text_key] = ""
 
+    # --- NEW: SUCCESS & RESET BLOCK ---
+    success_key = f"success_eval_{target_res_id}"
+    if st.session_state.get(success_key):
+        st.success("🎉 Scenario safely logged to the Database! Ready for export.")
+        if st.button("🔄 Start New Recording", use_container_width=True, type="primary", key=f"btn_new_{target_res_id}"):
+            st.session_state[success_key] = False
+            st.rerun()
+        return # Hide the mic until they click the button
+    
+    audio_counter = st.session_state.get(f"audio_key_eval_{target_res_id}", 0)
+    # ----------------------------------
+
     # 3. MASSIVE CENTERED MICROPHONE (No Tabs!)
     audio_bytes = None
     audio_mime = "audio/wav"
     
     # The native audio widget is perfectly centered and pill-shaped
-    recorded_audio = st.audio_input("Record", key=f"recorder_{target_res_id}")
+    recorded_audio = st.audio_input("Record", key=f"recorder_{target_res_id}_{audio_counter}")
     if recorded_audio:
         audio_bytes = recorded_audio.read()
 
     # We hide the "Upload File" option in an expander so it doesn't ruin the clean UI
     with st.expander("📁 Upload an existing audio file instead"):
-        uploaded_audio = st.file_uploader("Upload (.wav, .mp3, .m4a)", type=["wav", "mp3", "m4a"], key=f"upload_{target_res_id}", label_visibility="collapsed")
+        uploaded_audio = st.file_uploader("Upload (.wav, .mp3, .m4a)", type=["wav", "mp3", "m4a"], key=f"upload_{target_res_id}_{audio_counter}", label_visibility="collapsed")
         if uploaded_audio:
             audio_bytes = uploaded_audio.read()
             if uploaded_audio.name.endswith(".mp3"): audio_mime = "audio/mp3"
@@ -1694,8 +1738,11 @@ def render_evaluation_tool():
                 )
                 if success:
                     st.balloons()
-                    st.success("🎉 Safely logged to Database! Ready for export.")
                     st.session_state.eval_draft = None
+                    st.session_state[text_key] = ""
+                    st.session_state[f"audio_key_eval_{target_res_id}"] = st.session_state.get(f"audio_key_eval_{target_res_id}", 0) + 1
+                    st.session_state[success_key] = True
+                    st.rerun()
                     
 def get_todays_schedule(target_id=None):
     if schedule_df.empty: return pd.DataFrame()
