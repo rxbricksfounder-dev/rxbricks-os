@@ -535,7 +535,7 @@ def generate_ai_evaluation(raw_dictation, learner_name, config, available_topics
     9. "Narrative": A comprehensive synthesis paragraph ready for {eval_sys}.
     10. "KnowledgeGap": "Socratic Gap Analysis: Explicitly state the exact clinical, conceptual, or mechanistic blind-spot the learner exhibited in this recording. Keep it to 1 sentence.",
     11. "AdaptiveAssignment": "Phase 4 Branching: Prescribe a specific, actionable micro-assignment to close this gap. It MUST be specifically tailored to the learner's '{phenotype}' cognitive style."
-    """
+
     Ensure the response is ONLY raw JSON.
     """
     try:
@@ -645,7 +645,7 @@ def run_gap_analysis(standard_name, evaluation_data_subset, config):
     You are an expert {nom['accreditation']} Lead Surveyor auditing a {config['program_name']}.
     Review the following {nom['educator'].lower()} evaluations submitted for the standard: {standard_name}.
     
-    prompt = f"Your goal is to identify gaps in the {nom['learner'].lower()}s' clinical exposure and recommend actionable steps for the {nom['director']}."
+    Your goal is to identify gaps in the {nom['learner'].lower()}s' clinical exposure and recommend actionable steps for the {nom['director']}.
     
     Output Requirements:
     Return a professional, markdown-formatted report with the following sections:
