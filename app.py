@@ -645,7 +645,7 @@ def run_gap_analysis(standard_name, evaluation_data_subset, config):
     You are an expert {nom['accreditation']} Lead Surveyor auditing a {config['program_name']}.
     Review the following {nom['educator'].lower()} evaluations submitted for the standard: {standard_name}.
     
-    Your goal is to identify gaps in the {nom['learner'].lower()}s' clinical exposure and recommend actionable steps for the {nom['director']}.
+    prompt = f"Your goal is to identify gaps in the {nom['learner'].lower()}s' clinical exposure and recommend actionable steps for the {nom['director']}."
     
     Output Requirements:
     Return a professional, markdown-formatted report with the following sections:
