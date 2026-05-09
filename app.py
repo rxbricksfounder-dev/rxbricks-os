@@ -537,7 +537,7 @@ def generate_ai_evaluation(raw_dictation, learner_name, config, available_topics
     11. "AdaptiveAssignment": "Phase 4 Branching: Prescribe a specific, actionable micro-assignment to close this gap. It MUST be specifically tailored to the learner's '{phenotype}' cognitive style."
     """
     Ensure the response is ONLY raw JSON.
-    
+    """
     try:
         response = model.generate_content(
             prompt, 
