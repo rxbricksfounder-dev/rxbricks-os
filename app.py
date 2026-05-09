@@ -633,6 +633,49 @@ def generate_admin_document(doc_type, raw_notes, config, context=""):
         st.error(f"AI Generation Failed: {e}")
         return None
 
+def generate_pharmacademic_summary(learner_name, timeframe, evals_df, config):
+    """Synthesizes multiple individual evaluations into one PharmAcademic-ready summary."""
+    model = get_gemini_model()
+    if not model: return "AI Model unavailable."
+    
+    nom = config["nomenclature"]
+    
+    # Prioritize the final PharmAcademic text, fallback to Overall Narrative
+    text_col = 'PharmAcademic_Final_Text' if 'PharmAcademic_Final_Text' in evals_df.columns else 'Overall Narrative'
+    
+    # Combine the texts with their dates and grades for context
+    evals_df['Timestamp_Str'] = evals_df['Timestamp'].dt.strftime('%m/%d')
+    context_list = []
+    for _, row in evals_df.iterrows():
+        grade = row.get('Grade', 'N/A')
+        narrative = row.get(text_col, row.get('Overall Narrative', 'No narrative provided.'))
+        context_list.append(f"[{row['Timestamp_Str']} - Grade: {grade}] {narrative}")
+        
+    combined_context = "\n\n".join(context_list)
+    
+    prompt = f"""
+    You are an expert {nom['director']} writing a formal {timeframe} summative evaluation for {nom['learner']} {learner_name}.
+    This text will be pasted directly into {nom['eval_system']}.
+    
+    Based ONLY on the following raw shift evaluations from this period, synthesize a cohesive, professional 2-3 paragraph summary.
+    
+    Requirements:
+    1. Summarize the core clinical encounters and topics covered.
+    2. Highlight key strengths and areas where they demonstrated autonomy or progression.
+    3. Clearly state the specific, actionable areas for improvement based on the preceptor feedback.
+    4. Maintain a formal, academic tone suitable for an official residency record.
+    5. Do not invent or hallucinate clinical events not mentioned in the text.
+    
+    RAW EVALUATIONS ({timeframe} Window):
+    {combined_context}
+    """
+    
+    try:
+        response = model.generate_content(prompt)
+        return response.text
+    except Exception as e:
+        return f"Error generating summary: {str(e)}"
+
 def run_gap_analysis(standard_name, evaluation_data_subset, config):
     model = get_gemini_model()
     if not model: return None
@@ -1250,6 +1293,70 @@ def render_ce_case_logger(learner_id):
                     st.session_state[f"audio_key_ce_{learner_id}"] = st.session_state.get(f"audio_key_ce_{learner_id}", 0) + 1
                     st.session_state[success_key] = True
                     st.rerun()
+
+def render_pharmacademic_compiler(role, learner_dict, active_config):
+    st.subheader("📋 PharmAcademic Compilation Engine")
+    st.caption("Instantly aggregate and synthesize recent evaluations for direct copy/paste into your evaluation system.")
+    
+    if not learner_dict:
+        st.warning("No learners available.")
+        return
+        
+    live_eval_df = get_evaluation_log(active_config["sheet_name"])
+    if live_eval_df.empty:
+        st.info("No evaluation data found in the system.")
+        return
+        
+    col1, col2 = st.columns(2)
+    with col1:
+        target_res_id = st.selectbox(
+            "Select Learner:", 
+            list(learner_dict.keys()), 
+            format_func=lambda x: learner_dict.get(x, x),
+            key=f"comp_res_sel_{role}"
+        )
+    with col2:
+        timeframe = st.radio("Compilation Window:", ["Weekly (Last 7 Days)", "Monthly (Last 30 Days)"], horizontal=True, key=f"comp_time_{role}")
+        
+    days = 7 if "Weekly" in timeframe else 30
+    
+    # Filter the data
+    my_evals = get_learner_evals(live_eval_df, active_config, target_res_id)
+    if my_evals.empty:
+        st.warning("No evaluations found for this learner.")
+        return
+        
+    my_evals['Timestamp'] = pd.to_datetime(my_evals['Timestamp'], errors='coerce')
+    cutoff_date = pd.to_datetime('today') - pd.Timedelta(days=days)
+    recent_evals = my_evals[my_evals['Timestamp'] >= cutoff_date]
+    
+    st.write("---")
+    if recent_evals.empty:
+        st.info(f"No evaluations logged for {learner_dict.get(target_res_id)} in the selected timeframe.")
+        return
+        
+    st.success(f"Found **{len(recent_evals)}** logged evaluations in the last {days} days.")
+    
+    if st.button("✨ Generate Summative Compilation", type="primary", use_container_width=True, key=f"comp_btn_{role}"):
+        with st.spinner("Synthesizing evaluations..."):
+            learner_name = learner_dict.get(target_res_id, target_res_id)
+            summary_text = generate_pharmacademic_summary(learner_name, timeframe, recent_evals, active_config)
+            
+            if summary_text:
+                st.session_state[f"comp_draft_{role}"] = summary_text
+                
+    if f"comp_draft_{role}" in st.session_state:
+        st.write("### 📝 Official Synthesis")
+        compiled_text = st.text_area("Copy and paste this directly into PharmAcademic:", value=st.session_state[f"comp_draft_{role}"], height=300)
+        
+        # Provide a quick CSV download of just those specific evaluations for backup/upload
+        csv_export = recent_evals.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download Raw Evals (CSV)", 
+            data=csv_export, 
+            file_name=f"{target_res_id}_{timeframe.split(' ')[0]}_Evals.csv", 
+            mime='text/csv'
+        )
                     
 def render_curriculum(current_role, current_tier):
     if curriculum_df.empty:
@@ -2059,6 +2166,8 @@ if user_role == "admin":
     # TAB 2 IS NOW THE DASHBOARD REPORTS
     with tab2:
         st.subheader(f"🌐 {nom['director'].split(' ')[0]} Command Center: Program Overview")
+        st.divider()
+        render_pharmacademic_compiler(user_role, learner_dict, active_config)
         
         # 1. Fetch the data FIRST
         live_eval_df = get_evaluation_log(active_sheet_name) 
@@ -2327,6 +2436,8 @@ elif user_role == "preceptor":
                     st.dataframe(recent_10[valid_cols], use_container_width=True, hide_index=True)
                 else:
                     st.info("No recent evaluations found for this resident.")
+            st.divider()
+            render_pharmacademic_compiler(user_role, learner_dict, active_config)
             # -------------------------------------------
             
     with tab3:
