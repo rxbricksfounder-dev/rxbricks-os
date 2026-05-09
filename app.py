@@ -2322,7 +2322,34 @@ elif user_role == "preceptor":
 elif user_role == "learner":
     st.title(f"Welcome, {learner_dict.get(logged_in_id, logged_in_id)}!")
     
-    st.markdown(f"**Cognitive Phenotype:** `{st.session_state.get('phenotype', 'Standard')}`")
+    # --- NEW: PHASE 1 GATEWAY LOCK ---
+    current_phenotype = st.session_state.get('phenotype', '')
+    
+    # Check if the phenotype is empty, blank, or 'nan' (Not a Number from pandas)
+    if not current_phenotype or str(current_phenotype).lower() == "nan" or str(current_phenotype).strip() == "":
+        st.error("🚨 **Action Required: Cognitive Phenotype Incomplete**")
+        
+        st.markdown("""
+        Before unlocking the Clinical Voice Journal and your personalized curriculum, you must establish your baseline cognitive architecture. 
+        
+        This allows the AI to tailor complex pharmacotherapy topics specifically to your learning style (e.g., Visual/Global vs. Verbal/Sequential) and measure your cognitive friction.
+        """)
+        
+        st.info("📝 **Step 1:** Complete the Cognitive Phenotype Index")
+        # REPLACE THIS LINK with your actual Felder-Silverman Google Form link
+        st.markdown("[👉 **Click Here to Take the Phenotype Index**](https://forms.google.com/1FAIpQLSc3xwWMnHsbFSvbHK6kWQUPxV0TiUCFYnZHP3ZYk52gjvExyQ)", unsafe_allow_html=True)
+        
+        st.info("🧠 **Step 2:** Complete the R-SPQ-2F Assessment")
+        # REPLACE THIS LINK with your actual R-SPQ-2F Google Form link
+        st.markdown("[👉 **Click Here to Take the R-SPQ-2F**](https://forms.google.com/1FAIpQLSeUr0fpy1-z0M7vwK8HgrNPw5CvU0fHmSe9E3hPV82cNhQV7Q)", unsafe_allow_html=True)
+        
+        st.write("---")
+        st.markdown("*Note: Once completed, your Director will update your user profile in the database. Please check back later to access your dashboard.*")
+        
+        st.stop() # THIS IS THE LOCK: It stops the rest of the app from rendering!
+    # ---------------------------------
+    
+    st.markdown(f"**Cognitive Phenotype:** `{current_phenotype}`")
     
     render_step_tracker(logged_in_id)
     st.write("---")
