@@ -446,14 +446,18 @@ def generate_preceptor_prime(learner_name, recent_evals_df):
     except Exception as e:
         return f"Ready to evaluate {learner_name}."
 
-def generate_learner_prime(learner_name, schedule_context, recent_evals_text):
+def generate_learner_prime(learner_name, schedule_context, recent_evals_text, phenotype):
     """Generates a dynamic Daily Mission prompt for the learner's voice journal."""
     model = get_gemini_model()
     if not model: return "Focus on establishing your clinical workflow today, and record any significant patient interventions."
     
     prompt = f"""
     You are an expert Clinical Coaching AI acting as a mentor for a pharmacy resident/student, {learner_name}.
-    They are about to start their shift or study session.
+    They are about to start their shift or study session. Their validated cognitive learning phenotype is: {phenotype}.
+    
+    PHASE INSTRUCTIONS:
+    If 'Recent Feedback Context' says 'No recent evaluations on file', you are in Phase 2. Give them a foundational baseline mission to master core biologic/pharmacotherapy principles, specifically tailored to their {phenotype} style.
+    Otherwise, you are in Phase 4. Give them a specific clinical nuance to look out for based on their schedule and past feedback, tailored to their {phenotype} style.
     
     Your goal is to give them a specific "Daily Mission" to focus on and later dictate into their clinical voice journal.
     
@@ -474,9 +478,9 @@ def generate_learner_prime(learner_name, schedule_context, recent_evals_text):
     except Exception as e:
         return "Keep an eye out for complex clinical scenarios today, and record your thought process on any major interventions."
 
-def generate_ai_evaluation(raw_dictation, learner_name, config, available_topics, proven_bricks=None):
+def generate_ai_evaluation(raw_dictation, learner_name, config, available_topics=None, phenotype="Standard"):
+    """Uses Gemini to structure a raw dictation into a PharmAcademic-ready evaluation draft."""
     model = get_gemini_model()
-    if not model: return None
     
     nom = config["nomenclature"]
     eval_sys = nom["eval_system"]
@@ -519,7 +523,7 @@ def generate_ai_evaluation(raw_dictation, learner_name, config, available_topics
     - Valid Interaction Types: ["Clinical Scenario / Bedside Care", "Topic Discussion / Review", "Case Presentation", "Journal Club / Literature Review", "Project / Admin Review"]
     
     Output Requirements:
-    Return ONLY a strict JSON object with exactly these 9 keys:
+    Return ONLY a strict JSON object with exactly these 11 keys:
     1. "InferredRotation": String (Must exactly match one of the Valid Rotations)
     2. "InferredObjective": String (Must match one of the Valid Objectives, or summarize in 3 words if completely missing)
     3. "InferredGrade": String (Must exactly match one of the Valid Grades)
@@ -529,8 +533,11 @@ def generate_ai_evaluation(raw_dictation, learner_name, config, available_topics
     7. "Comment": A 1-2 sentence professional assessment. Ground this comment in the DETERMINISTIC EVIDENCE FOUND if any is provided.
     8. "ActionPlan": 1-2 sentences detailing specific next steps.
     9. "Narrative": A comprehensive synthesis paragraph ready for {eval_sys}.
+    10. "KnowledgeGap": "Socratic Gap Analysis: Explicitly state the exact clinical, conceptual, or mechanistic blind-spot the learner exhibited in this recording. Keep it to 1 sentence.",
+    11. "AdaptiveAssignment": "Phase 4 Branching: Prescribe a specific, actionable micro-assignment to close this gap. It MUST be specifically tailored to the learner's '{phenotype}' cognitive style."
     """
-        
+    Ensure the response is ONLY raw JSON.
+    
     try:
         response = model.generate_content(
             prompt, 
@@ -1425,8 +1432,9 @@ def render_learner_voice_journal(resident_id, active_config, eval_set):
                 sched_text = ", ".join(today_sched['Subject'].dropna().astype(str).tolist())
                 
             learner_name = learner_dict.get(resident_id, resident_id)
-            st.session_state[prime_state_key] = generate_learner_prime(learner_name, sched_text, evals_text)
-
+            current_phenotype = st.session_state.get('phenotype', 'Standard')
+            st.session_state[prime_state_key] = generate_learner_prime(learner_name, sched_text, evals_text, current_phenotype)
+            
     # Display the Daily Mission Briefing right above the microphone
     st.markdown(f"""
         <div style="background-color: #f3e5f5; border-left: 5px solid #9c27b0; padding: 15px; border-radius: 5px; margin-bottom: 20px; margin-top: 10px;">
@@ -1509,11 +1517,13 @@ def render_learner_voice_journal(resident_id, active_config, eval_set):
                 available_topics = curriculum_df['Topic'].dropna().unique().tolist() if not curriculum_df.empty else ["General Clinical Action"]
                 learner_name = learner_dict.get(resident_id, resident_id)
                 
+                current_phenotype = st.session_state.get('phenotype', 'Standard')
                 ai_result = generate_ai_evaluation(
                     raw_dictation=st.session_state[text_key], 
                     learner_name=learner_name, 
                     config=active_config,
-                    available_topics=available_topics
+                    available_topics=available_topics,
+                    phenotype=current_phenotype
                 )
                 if ai_result:
                     st.session_state.self_eval_draft = ai_result
@@ -1529,7 +1539,16 @@ def render_learner_voice_journal(resident_id, active_config, eval_set):
         # Show the user what the AI inferred
         st.info(f"**Mapped Objective:** {draft.get('InferredObjective', 'Unknown')}\n\n**Mapped Rotation:** {draft.get('InferredRotation', 'Unknown')}")
         
+        # --- NEW: Socratic Gap & Adaptive Branching UI ---
+        if draft.get("KnowledgeGap"):
+            st.warning(f"🧠 **Socratic Gap Identified:** {draft.get('KnowledgeGap')}")
+        if draft.get("AdaptiveAssignment"):
+            current_pheno = st.session_state.get('phenotype', 'Standard')
+            st.success(f"🎯 **Adaptive Branching ({current_pheno}):** {draft.get('AdaptiveAssignment')}")
+        # -------------------------------------------------
+        
         final_narrative = st.text_area("AI-Generated PharmAcademic Narrative", value=draft.get("Narrative", ""), height=150, key="self_narrative")
+        
         action_plan = st.text_area("Your Action Plan for Next Time", value=draft.get("ActionPlan", ""), height=80, key="self_action")
         
         if st.button("💾 Submit to Preceptor / Log to Database", type="primary", key="self_save_btn"):
